@@ -1,0 +1,42 @@
+import { useEffect, useState } from 'react'
+import { collection, onSnapshot, addDoc, updateDoc, deleteDoc, doc, serverTimestamp, orderBy, query } from 'firebase/firestore'
+import { db, investmentsCol } from '../lib/firebase'
+import { Investment } from '../types'
+import { useAuth } from '../contexts/AuthContext'
+
+export function useInvestments() {
+  const { user } = useAuth()
+  const [investments, setInvestments] = useState<Investment[]>([])
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    if (!user) return
+    const q = query(collection(db, investmentsCol(user.uid)), orderBy('createdAt', 'asc'))
+    return onSnapshot(q, snap => {
+      setInvestments(snap.docs.map(d => ({ id: d.id, ...d.data() } as Investment)))
+      setLoading(false)
+    })
+  }, [user])
+
+  const addInvestment = async (data: Omit<Investment, 'id' | 'createdAt' | 'lastUpdated'>) => {
+    if (!user) return
+    await addDoc(collection(db, investmentsCol(user.uid)), { ...data, lastUpdated: serverTimestamp(), createdAt: serverTimestamp() })
+  }
+
+  const updateInvestment = async (id: string, data: Partial<Investment>) => {
+    if (!user) return
+    await updateDoc(doc(db, investmentsCol(user.uid), id), { ...data as Record<string, unknown>, lastUpdated: serverTimestamp() })
+  }
+
+  const deleteInvestment = async (id: string) => {
+    if (!user) return
+    await deleteDoc(doc(db, investmentsCol(user.uid), id))
+  }
+
+  const totalCost = investments.reduce((s, i) => s + i.shares * i.purchasePrice, 0)
+  const totalValue = investments.reduce((s, i) => s + i.shares * i.currentPrice, 0)
+  const totalGainLoss = totalValue - totalCost
+  const totalGainLossPct = totalCost > 0 ? (totalGainLoss / totalCost) * 100 : 0
+
+  return { investments, loading, addInvestment, updateInvestment, deleteInvestment, totalCost, totalValue, totalGainLoss, totalGainLossPct }
+}

@@ -1,0 +1,104 @@
+import { useEffect, useState } from 'react'
+import { collection, onSnapshot, addDoc, updateDoc, deleteDoc, doc, serverTimestamp, orderBy, query, writeBatch } from 'firebase/firestore'
+import { db, accountsCol, bucketsCol, transactionsCol } from '../lib/firebase'
+import { Account, AccountBucket } from '../types'
+import { useAuth } from '../contexts/AuthContext'
+
+export function useAccounts() {
+  const { user } = useAuth()
+  const [accounts, setAccounts] = useState<Account[]>([])
+  const [buckets, setBuckets] = useState<AccountBucket[]>([])
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    if (!user) return
+    const unsub1 = onSnapshot(query(collection(db, accountsCol(user.uid)), orderBy('createdAt', 'asc')), snap => {
+      setAccounts(snap.docs.map(d => ({ id: d.id, ...d.data() } as Account)))
+      setLoading(false)
+    })
+    const unsub2 = onSnapshot(query(collection(db, bucketsCol(user.uid)), orderBy('createdAt', 'asc')), snap => {
+      setBuckets(snap.docs.map(d => ({ id: d.id, ...d.data() } as AccountBucket)))
+    })
+    return () => { unsub1(); unsub2() }
+  }, [user])
+
+  const addAccount = async (data: Omit<Account, 'id' | 'createdAt'>) => {
+    if (!user) return
+    await addDoc(collection(db, accountsCol(user.uid)), { ...data, createdAt: serverTimestamp() })
+  }
+
+  const updateAccount = async (id: string, data: Partial<Account>) => {
+    if (!user) return
+    await updateDoc(doc(db, accountsCol(user.uid), id), data as Record<string, unknown>)
+  }
+
+  const deleteAccount = async (id: string) => {
+    if (!user) return
+    await deleteDoc(doc(db, accountsCol(user.uid), id))
+  }
+
+  const addBucket = async (data: Omit<AccountBucket, 'id' | 'createdAt'>) => {
+    if (!user) return
+    return await addDoc(collection(db, bucketsCol(user.uid)), { ...data, createdAt: serverTimestamp() })
+  }
+
+  const updateBucket = async (id: string, data: Partial<AccountBucket>) => {
+    if (!user) return
+    await updateDoc(doc(db, bucketsCol(user.uid), id), data as Record<string, unknown>)
+  }
+
+  const deleteBucket = async (id: string) => {
+    if (!user) return
+    await deleteDoc(doc(db, bucketsCol(user.uid), id))
+  }
+
+  // Add a transaction and atomically update account balance(s)
+  const addTransaction = async (tx: {
+    date: Date; amount: number; type: 'income' | 'expense' | 'transfer'
+    categoryName: string; categoryIcon: string; categoryColor: string
+    accountId: string; accountName: string
+    toAccountId?: string; toAccountName?: string
+    payee: string; notes: string
+  }) => {
+    if (!user) return
+    const batch = writeBatch(db)
+    const txRef = doc(collection(db, transactionsCol(user.uid)))
+    batch.set(txRef, { ...tx, date: tx.date, createdAt: serverTimestamp() })
+
+    const fromRef = doc(db, accountsCol(user.uid), tx.accountId)
+    const fromAcc = accounts.find(a => a.id === tx.accountId)
+    if (fromAcc) {
+      const delta = tx.type === 'income' ? tx.amount : -tx.amount
+      batch.update(fromRef, { balance: fromAcc.balance + delta })
+    }
+
+    if (tx.type === 'transfer' && tx.toAccountId) {
+      const toRef = doc(db, accountsCol(user.uid), tx.toAccountId)
+      const toAcc = accounts.find(a => a.id === tx.toAccountId)
+      if (toAcc) batch.update(toRef, { balance: toAcc.balance + tx.amount })
+    }
+
+    await batch.commit()
+  }
+
+  const deleteTransaction = async (txId: string, tx: { amount: number; type: string; accountId: string; toAccountId?: string }) => {
+    if (!user) return
+    const batch = writeBatch(db)
+    batch.delete(doc(db, transactionsCol(user.uid), txId))
+    const fromAcc = accounts.find(a => a.id === tx.accountId)
+    if (fromAcc) {
+      const delta = tx.type === 'income' ? -tx.amount : tx.amount
+      batch.update(doc(db, accountsCol(user.uid), tx.accountId), { balance: fromAcc.balance + delta })
+    }
+    if (tx.type === 'transfer' && tx.toAccountId) {
+      const toAcc = accounts.find(a => a.id === tx.toAccountId)
+      if (toAcc) batch.update(doc(db, accountsCol(user.uid), tx.toAccountId), { balance: toAcc.balance - tx.amount })
+    }
+    await batch.commit()
+  }
+
+  const bucketsForAccount = (accountId: string) => buckets.filter(b => b.accountId === accountId)
+  const allocatedForAccount = (accountId: string) => bucketsForAccount(accountId).reduce((s, b) => s + b.allocatedAmount, 0)
+
+  return { accounts, buckets, loading, addAccount, updateAccount, deleteAccount, addBucket, updateBucket, deleteBucket, addTransaction, deleteTransaction, bucketsForAccount, allocatedForAccount }
+}

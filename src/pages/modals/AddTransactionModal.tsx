@@ -1,0 +1,156 @@
+import { useState } from 'react'
+import { X } from 'lucide-react'
+import { Account, Category } from '../../types'
+
+type TxType = 'income' | 'expense' | 'transfer'
+
+interface Props {
+  accounts: Account[]
+  expenseCategories: Category[]
+  incomeCategories: Category[]
+  onSave: (tx: {
+    date: Date; amount: number; type: TxType
+    categoryName: string; categoryIcon: string; categoryColor: string
+    accountId: string; accountName: string
+    toAccountId?: string; toAccountName?: string
+    payee: string; notes: string
+  }) => Promise<void>
+  onClose: () => void
+}
+
+export default function AddTransactionModal({ accounts, expenseCategories, incomeCategories, onSave, onClose }: Props) {
+  const [type, setType] = useState<TxType>('expense')
+  const [amount, setAmount] = useState('')
+  const [payee, setPayee] = useState('')
+  const [notes, setNotes] = useState('')
+  const [date, setDate] = useState(new Date().toISOString().split('T')[0])
+  const [accountId, setAccountId] = useState(accounts[0]?.id ?? '')
+  const [toAccountId, setToAccountId] = useState('')
+  const [selectedCat, setSelectedCat] = useState<Category | null>(null)
+  const [saving, setSaving] = useState(false)
+
+  const cats = type === 'income' ? incomeCategories : expenseCategories
+  const canSave = amount && Number(amount) > 0 && accountId &&
+    (type === 'transfer' ? toAccountId && toAccountId !== accountId : selectedCat)
+
+  const handleSave = async () => {
+    if (!canSave) return
+    setSaving(true)
+    const acc = accounts.find(a => a.id === accountId)!
+    const toAcc = accounts.find(a => a.id === toAccountId)
+    await onSave({
+      date: new Date(date),
+      amount: Number(amount),
+      type,
+      categoryName: type === 'transfer' ? 'Transfer' : (selectedCat?.name ?? 'Other'),
+      categoryIcon: type === 'transfer' ? '↔️' : (selectedCat?.icon ?? '💸'),
+      categoryColor: type === 'transfer' ? '#6B7280' : (selectedCat?.colorHex ?? '#6B7280'),
+      accountId,
+      accountName: acc.name,
+      toAccountId: type === 'transfer' ? toAccountId : undefined,
+      toAccountName: type === 'transfer' ? toAcc?.name : undefined,
+      payee,
+      notes,
+    })
+    onClose()
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/70 z-50 flex items-end lg:items-center justify-center p-0 lg:p-4" onClick={onClose}>
+      <div className="bg-slate-900 w-full lg:max-w-md rounded-t-2xl lg:rounded-2xl border border-slate-800 max-h-[92vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between p-5 border-b border-slate-800 sticky top-0 bg-slate-900 z-10">
+          <h2 className="text-lg font-bold">Add Transaction</h2>
+          <button onClick={onClose} className="text-slate-400 hover:text-white"><X size={20} /></button>
+        </div>
+
+        <div className="p-5 space-y-5">
+          {/* Type */}
+          <div className="flex bg-slate-800 rounded-xl p-1 gap-1">
+            {(['expense', 'income', 'transfer'] as TxType[]).map(t => (
+              <button key={t} onClick={() => { setType(t); setSelectedCat(null) }}
+                className={`flex-1 py-2 rounded-lg text-sm font-semibold transition-colors capitalize ${type === t ? 'bg-blue-600 text-white' : 'text-slate-400 hover:text-white'}`}>
+                {t}
+              </button>
+            ))}
+          </div>
+
+          {/* Amount */}
+          <div className="bg-slate-800 rounded-xl p-4">
+            <label className="text-xs text-slate-400 font-medium block mb-1">Amount (SGD)</label>
+            <input
+              type="number" value={amount} onChange={e => setAmount(e.target.value)}
+              placeholder="0.00" step="0.01"
+              className="w-full bg-transparent text-3xl font-bold text-white outline-none placeholder-slate-600"
+            />
+          </div>
+
+          {/* Date + Payee */}
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="text-xs text-slate-400 font-medium block mb-1.5">Date</label>
+              <input type="date" value={date} onChange={e => setDate(e.target.value)}
+                className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2.5 text-sm text-white outline-none focus:border-blue-500" />
+            </div>
+            <div>
+              <label className="text-xs text-slate-400 font-medium block mb-1.5">Payee</label>
+              <input value={payee} onChange={e => setPayee(e.target.value)} placeholder="Who?"
+                className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2.5 text-sm text-white outline-none focus:border-blue-500 placeholder-slate-600" />
+            </div>
+          </div>
+
+          {/* Account */}
+          <div>
+            <label className="text-xs text-slate-400 font-medium block mb-1.5">{type === 'transfer' ? 'From' : 'Account'}</label>
+            <select value={accountId} onChange={e => setAccountId(e.target.value)}
+              className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2.5 text-sm text-white outline-none focus:border-blue-500">
+              {accounts.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+            </select>
+          </div>
+
+          {type === 'transfer' && (
+            <div>
+              <label className="text-xs text-slate-400 font-medium block mb-1.5">To</label>
+              <select value={toAccountId} onChange={e => setToAccountId(e.target.value)}
+                className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2.5 text-sm text-white outline-none focus:border-blue-500">
+                <option value="">Select account</option>
+                {accounts.filter(a => a.id !== accountId).map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+              </select>
+            </div>
+          )}
+
+          {/* Category grid */}
+          {type !== 'transfer' && (
+            <div>
+              <label className="text-xs text-slate-400 font-medium block mb-2">Category</label>
+              <div className="grid grid-cols-4 gap-2">
+                {cats.map(cat => (
+                  <button key={cat.id} onClick={() => setSelectedCat(cat)}
+                    className={`flex flex-col items-center gap-1.5 p-2 rounded-xl text-center transition-all ${
+                      selectedCat?.id === cat.id ? 'ring-2 ring-blue-500 bg-slate-800' : 'bg-slate-800 hover:bg-slate-700'
+                    }`}>
+                    <span className="text-xl leading-none">{cat.icon}</span>
+                    <span className="text-[10px] text-slate-300 leading-tight">{cat.name}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Notes */}
+          <div>
+            <label className="text-xs text-slate-400 font-medium block mb-1.5">Notes</label>
+            <input value={notes} onChange={e => setNotes(e.target.value)} placeholder="Optional"
+              className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2.5 text-sm text-white outline-none focus:border-blue-500 placeholder-slate-600" />
+          </div>
+
+          <button
+            onClick={handleSave} disabled={!canSave || saving}
+            className="w-full bg-blue-600 hover:bg-blue-700 disabled:opacity-40 disabled:cursor-not-allowed text-white font-bold py-3.5 rounded-xl transition-colors"
+          >
+            {saving ? 'Saving…' : 'Save Transaction'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
