@@ -180,7 +180,7 @@ export default function InvestmentsPage() {
         </div>
       )}
 
-      {showAdd && <AddInvestmentModal onClose={() => setShowAdd(false)} onSave={async (d) => { await addInvestment(d); setShowAdd(false) }} />}
+      {showAdd && <AddInvestmentModal existingGroups={groups} onClose={() => setShowAdd(false)} onSave={async (d) => { await addInvestment(d); setShowAdd(false) }} />}
       {showUpdatePrices && (
         <UpdatePricesModal
           groups={groups}
@@ -224,19 +224,45 @@ export default function InvestmentsPage() {
 }
 
 
-function AddInvestmentModal({ onClose, onSave }: { onClose: () => void; onSave: (d: any) => void }) {
-  const [ticker, setTicker] = useState('')
-  const [name, setName] = useState('')
-  const [shares, setShares] = useState('')
+function AddInvestmentModal({ existingGroups, onClose, onSave }: {
+  existingGroups: TickerGroup[]
+  onClose: () => void
+  onSave: (d: any) => void
+}) {
+  const [pinnedTicker, setPinnedTicker] = useState<TickerGroup | null>(null)
+
+  const [ticker, setTicker]             = useState('')
+  const [name, setName]                 = useState('')
+  const [shares, setShares]             = useState('')
   const [purchasePrice, setPurchasePrice] = useState('')
   const [currentPrice, setCurrentPrice] = useState('')
   const [purchaseDate, setPurchaseDate] = useState(new Date().toISOString().split('T')[0])
-  const [broker, setBroker] = useState('')
-  const [currency, setCurrency] = useState('SGD')
-  const [notes, setNotes] = useState('')
+  const [broker, setBroker]             = useState('')
+  const [currency, setCurrency]         = useState('SGD')
+  const [notes, setNotes]               = useState('')
 
-  const cost = (Number(shares) || 0) * (Number(purchasePrice) || 0)
+  const selectExisting = (g: TickerGroup) => {
+    setPinnedTicker(g)
+    setTicker(g.ticker)
+    setName(g.name)
+    setCurrency(g.lots[0]?.currency ?? 'SGD')
+    setCurrentPrice(String(g.lots[0]?.currentPrice ?? ''))
+    setBroker(g.lots[0]?.broker ?? '')
+  }
+
+  const clearExisting = () => {
+    setPinnedTicker(null)
+    setTicker(''); setName(''); setCurrentPrice(''); setBroker(''); setCurrency('SGD')
+  }
+
+  const cost  = (Number(shares) || 0) * (Number(purchasePrice) || 0)
   const value = (Number(shares) || 0) * (Number(currentPrice) || 0)
+  const isLocked = !!pinnedTicker
+
+  const inputCls = (locked?: boolean) =>
+    `w-full bg-slate-800 border rounded-xl px-3 py-2.5 text-sm text-white outline-none transition-colors ${
+      locked ? 'border-slate-700 text-slate-400 cursor-not-allowed' : 'border-slate-700 focus:border-blue-500'
+    }`
 
   return (
     <div className="fixed inset-0 bg-black/70 z-50 flex items-end lg:items-center justify-center" onClick={onClose}>
@@ -246,53 +272,102 @@ function AddInvestmentModal({ onClose, onSave }: { onClose: () => void; onSave: 
           <button onClick={onClose} className="text-slate-400 hover:text-white"><X size={20} /></button>
         </div>
         <div className="p-5 space-y-4">
+
+          {/* Existing ticker quick-select */}
+          {existingGroups.length > 0 && (
+            <div>
+              <p className="text-xs text-slate-400 font-medium mb-2">Add to existing holding</p>
+              <div className="flex flex-wrap gap-2">
+                {existingGroups.map(g => (
+                  <button key={g.ticker} onClick={() => pinnedTicker?.ticker === g.ticker ? clearExisting() : selectExisting(g)}
+                    className={`flex items-center gap-2 px-3 py-1.5 rounded-xl text-sm font-semibold transition-all border ${
+                      pinnedTicker?.ticker === g.ticker
+                        ? 'bg-purple-600 border-purple-500 text-white'
+                        : 'bg-slate-800 border-slate-700 text-slate-300 hover:border-purple-500 hover:text-white'
+                    }`}>
+                    <span className="font-mono">{g.ticker}</span>
+                    <span className="text-xs font-normal opacity-70">{g.lots.length} lot{g.lots.length > 1 ? 's' : ''}</span>
+                  </button>
+                ))}
+                {pinnedTicker && (
+                  <button onClick={clearExisting} className="px-3 py-1.5 rounded-xl text-xs text-slate-400 hover:text-white bg-slate-800 border border-slate-700 transition-colors">
+                    + New ticker
+                  </button>
+                )}
+              </div>
+              {pinnedTicker && (
+                <p className="text-xs text-slate-500 mt-2">
+                  Ticker, name, currency and current price are inherited from existing lots — update price later via "Update Prices".
+                </p>
+              )}
+              <div className="border-t border-slate-800 mt-3" />
+            </div>
+          )}
+
+          {/* Ticker + currency (locked when existing selected) */}
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="text-xs text-slate-400 font-medium block mb-1.5">Ticker</label>
-              <input value={ticker} onChange={e => setTicker(e.target.value.toUpperCase())} placeholder="VWRA"
-                className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2.5 text-sm text-white outline-none focus:border-blue-500 placeholder-slate-600 font-mono" />
+              <input value={ticker} onChange={e => !isLocked && setTicker(e.target.value.toUpperCase())}
+                readOnly={isLocked} placeholder="VWRA"
+                className={inputCls(isLocked) + ' font-mono'} />
             </div>
             <div>
               <label className="text-xs text-slate-400 font-medium block mb-1.5">Currency</label>
-              <select value={currency} onChange={e => setCurrency(e.target.value)}
-                className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2.5 text-sm text-white outline-none">
+              <select value={currency} onChange={e => !isLocked && setCurrency(e.target.value)} disabled={isLocked}
+                className={inputCls(isLocked)}>
                 {['SGD','USD','HKD','GBP','EUR'].map(c => <option key={c}>{c}</option>)}
               </select>
             </div>
           </div>
-          <div>
-            <label className="text-xs text-slate-400 font-medium block mb-1.5">Full name</label>
-            <input value={name} onChange={e => setName(e.target.value)} placeholder="Vanguard FTSE All-World ETF"
-              className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2.5 text-sm text-white outline-none focus:border-blue-500 placeholder-slate-600" />
-          </div>
+
+          {/* Name (locked when existing selected) */}
+          {!isLocked && (
+            <div>
+              <label className="text-xs text-slate-400 font-medium block mb-1.5">Full name</label>
+              <input value={name} onChange={e => setName(e.target.value)} placeholder="Vanguard FTSE All-World ETF"
+                className={inputCls()} />
+            </div>
+          )}
+
+          {/* Broker + date */}
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="text-xs text-slate-400 font-medium block mb-1.5">Broker / Platform</label>
-              <input value={broker} onChange={e => setBroker(e.target.value)} placeholder="e.g. IBKR, Tiger Brokers"
-                className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2.5 text-sm text-white outline-none focus:border-blue-500 placeholder-slate-600" />
+              <input value={broker} onChange={e => setBroker(e.target.value)} placeholder="e.g. IBKR"
+                className={inputCls()} />
             </div>
             <div>
               <label className="text-xs text-slate-400 font-medium block mb-1.5">Date bought</label>
               <DatePicker value={purchaseDate} onChange={setPurchaseDate} />
             </div>
           </div>
-          <div className="grid grid-cols-3 gap-3">
+
+          {/* Shares / purchase price / current price */}
+          <div className={`grid gap-3 ${isLocked ? 'grid-cols-2' : 'grid-cols-3'}`}>
             <div>
               <label className="text-xs text-slate-400 font-medium block mb-1.5">Shares</label>
               <input value={shares} onChange={e => setShares(e.target.value)} type="number" placeholder="0"
-                className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2.5 text-sm text-white outline-none focus:border-blue-500 placeholder-slate-600" />
+                onKeyDown={e => ['e','E','+','-'].includes(e.key) && e.preventDefault()}
+                className={inputCls()} />
             </div>
             <div>
-              <label className="text-xs text-slate-400 font-medium block mb-1.5">Avg cost</label>
+              <label className="text-xs text-slate-400 font-medium block mb-1.5">Purchase price</label>
               <input value={purchasePrice} onChange={e => setPurchasePrice(e.target.value)} type="number" placeholder="0.00"
-                className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2.5 text-sm text-white outline-none focus:border-blue-500 placeholder-slate-600" />
+                onKeyDown={e => ['e','E','+','-'].includes(e.key) && e.preventDefault()}
+                className={inputCls()} />
             </div>
-            <div>
-              <label className="text-xs text-slate-400 font-medium block mb-1.5">Current</label>
-              <input value={currentPrice} onChange={e => setCurrentPrice(e.target.value)} type="number" placeholder="0.00"
-                className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2.5 text-sm text-white outline-none focus:border-blue-500 placeholder-slate-600" />
-            </div>
+            {!isLocked && (
+              <div>
+                <label className="text-xs text-slate-400 font-medium block mb-1.5">Current price</label>
+                <input value={currentPrice} onChange={e => setCurrentPrice(e.target.value)} type="number" placeholder="0.00"
+                  onKeyDown={e => ['e','E','+','-'].includes(e.key) && e.preventDefault()}
+                  className={inputCls()} />
+              </div>
+            )}
           </div>
+
+          {/* Live P/L summary */}
           {shares && purchasePrice && currentPrice && (
             <div className="bg-slate-800 rounded-xl p-3 text-sm">
               <div className="flex justify-between"><span className="text-slate-400">Cost</span><span>{formatCurrency(cost)}</span></div>
@@ -304,12 +379,15 @@ function AddInvestmentModal({ onClose, onSave }: { onClose: () => void; onSave: 
               </div>
             </div>
           )}
+
           <input value={notes} onChange={e => setNotes(e.target.value)} placeholder="Notes (optional)"
-            className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2.5 text-sm text-white outline-none focus:border-blue-500 placeholder-slate-600" />
-          <button onClick={() => onSave({ ticker, name, shares: Number(shares), purchasePrice: Number(purchasePrice), currentPrice: Number(currentPrice), purchaseDate: Timestamp.fromDate(new Date(purchaseDate)), broker, currency, notes })}
+            className={inputCls()} />
+
+          <button
+            onClick={() => onSave({ ticker, name, shares: Number(shares), purchasePrice: Number(purchasePrice), currentPrice: Number(currentPrice), purchaseDate: Timestamp.fromDate(new Date(purchaseDate)), broker, currency, notes })}
             disabled={!ticker || !shares || !purchasePrice || !currentPrice}
             className="w-full bg-blue-600 hover:bg-blue-700 disabled:opacity-40 text-white font-bold py-3.5 rounded-xl transition-colors">
-            Add Investment
+            Add {pinnedTicker ? `${pinnedTicker.ticker} Lot` : 'Investment'}
           </button>
         </div>
       </div>
