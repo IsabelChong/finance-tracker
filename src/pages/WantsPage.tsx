@@ -1,10 +1,11 @@
 import { useState } from 'react'
-import { Plus, X, Star, Heart, Plane } from 'lucide-react'
+import { Plus, X, Star, Heart, Plane, Trophy, Trash2 } from 'lucide-react'
+import { Timestamp } from 'firebase/firestore'
 import { useWants } from '../hooks/useWants'
 import { useAccounts } from '../hooks/useAccounts'
+import { useCategories } from '../hooks/useCategories'
 import { formatCurrency, formatDate, toDate } from '../lib/utils'
-import { Want } from '../types'
-import { Timestamp } from 'firebase/firestore'
+import { Want, Category, Account, AccountBucket } from '../types'
 
 type WantCategory = 'needs' | 'dream' | 'vacation'
 type WantState = 'saving' | 'readyToBuy'
@@ -19,25 +20,58 @@ const CAT_META: Record<WantCategory, { label: string; icon: React.ReactNode; col
 
 export default function WantsPage() {
   const { wants, addWant, updateWant, deleteWant } = useWants()
-  const { accounts, buckets, addBucket, updateBucket } = useAccounts()
-  const [filterCat, setFilterCat] = useState<FilterCat>('all')
-  const [filterState, setFilterState] = useState<FilterState>('all')
-  const [showAdd, setShowAdd] = useState(false)
-  const [selected, setSelected] = useState<Want | null>(null)
+  const { accounts, buckets, addBucket, updateBucket, deleteBucket, addTransaction, deleteTransaction } = useAccounts()
+  const { expenseCategories } = useCategories()
 
-  const filtered = wants.filter(w =>
+  const [filterCat, setFilterCat]     = useState<FilterCat>('all')
+  const [filterState, setFilterState] = useState<FilterState>('all')
+  const [showAdd, setShowAdd]         = useState(false)
+  const [selected, setSelected]       = useState<Want | null>(null)
+  const [purchasing, setPurchasing]   = useState<Want | null>(null)
+
+  const activeWants    = wants.filter(w => w.state !== 'purchased')
+  const completedWants = wants.filter(w => w.state === 'purchased')
+
+  const filtered = activeWants.filter(w =>
     (filterCat === 'all' || w.category === filterCat) &&
     (filterState === 'all' || w.state === filterState)
   )
 
-  const totalSaved = wants.reduce((s, w) => {
-    const bucket = buckets.find(b => b.id === w.bucketId)
-    return s + (bucket?.allocatedAmount ?? 0)
-  }, 0)
-  const totalTarget = wants.reduce((s, w) => s + w.targetAmount, 0)
+  const totalSaved   = activeWants.reduce((s, w) => s + (buckets.find(b => b.id === w.bucketId)?.allocatedAmount ?? 0), 0)
+  const totalTarget  = activeWants.reduce((s, w) => s + w.targetAmount, 0)
 
   const getBucketForWant = (w: Want) => buckets.find(b => b.id === w.bucketId)
-  const getSavedAmount = (w: Want) => getBucketForWant(w)?.allocatedAmount ?? 0
+  const getSavedAmount   = (w: Want) => getBucketForWant(w)?.allocatedAmount ?? 0
+
+  const handlePurchase = async (want: Want, actualAmount: number, accountId: string, category: Category, date: Date, notes: string) => {
+    const acc = accounts.find(a => a.id === accountId)
+    const txId = await addTransaction({
+      date, amount: actualAmount, type: 'expense',
+      categoryName: category.name, categoryIcon: category.icon, categoryColor: category.colorHex,
+      accountId, accountName: acc?.name ?? '',
+      payee: want.name, notes,
+    })
+    const bucket = getBucketForWant(want)
+    if (bucket) await deleteBucket(bucket.id)
+    await updateWant(want.id, {
+      state: 'purchased',
+      purchasedAmount: actualAmount,
+      purchasedAt: Timestamp.fromDate(date),
+      purchaseTransactionId: txId,
+      purchaseAccountId: accountId,
+      bucketId: undefined,
+    } as Partial<Want>)
+  }
+
+  const handleDeletePurchased = async (want: Want) => {
+    if (!confirm(`Permanently delete "${want.name}" and reverse its purchase transaction?`)) return
+    if (want.purchaseTransactionId && want.purchasedAmount != null && want.purchaseAccountId) {
+      await deleteTransaction(want.purchaseTransactionId, {
+        amount: want.purchasedAmount, type: 'expense', accountId: want.purchaseAccountId,
+      })
+    }
+    await deleteWant(want.id)
+  }
 
   return (
     <div className="p-4 lg:p-6 space-y-5 max-w-3xl mx-auto">
@@ -81,60 +115,115 @@ export default function WantsPage() {
         ))}
       </div>
 
-      {/* Cards */}
+      {/* Active want cards */}
       {filtered.length === 0 ? (
         <div className="bg-slate-900 border border-slate-800 rounded-xl p-10 text-center text-slate-500">
-          {wants.length === 0 ? 'No goals yet. Add your first saving goal!' : 'No goals match your filters.'}
+          {activeWants.length === 0 ? 'No goals yet. Add your first saving goal!' : 'No goals match your filters.'}
         </div>
       ) : (
         <div className="space-y-3">
           {filtered.map(want => {
-            const saved = getSavedAmount(want)
-            const pct = want.targetAmount > 0 ? Math.min(100, (saved / want.targetAmount) * 100) : 0
-            const meta = CAT_META[want.category]
-            const bucket = getBucketForWant(want)
-            const ready = want.state === 'readyToBuy' || saved >= want.targetAmount
+            const saved   = getSavedAmount(want)
+            const pct     = want.targetAmount > 0 ? Math.min(100, (saved / want.targetAmount) * 100) : 0
+            const meta    = CAT_META[want.category]
+            const bucket  = getBucketForWant(want)
+            const ready   = want.state === 'readyToBuy' || saved >= want.targetAmount
             const daysLeft = want.targetDate ? Math.ceil((toDate(want.targetDate).getTime() - Date.now()) / 86400000) : null
 
             return (
-              <button key={want.id} onClick={() => setSelected(want)} className="w-full text-left bg-slate-900 border border-slate-800 hover:border-slate-600 rounded-2xl p-5 transition-all space-y-3">
-                <div className="flex items-start justify-between">
-                  <div className="flex items-center gap-2">
-                    <span className={`flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-full ${meta.color} ${meta.bg}`}>
-                      {meta.icon}{meta.label}
-                    </span>
-                    {ready && <span className="text-xs font-semibold text-green-400 bg-green-400/10 px-2.5 py-1 rounded-full">✅ Ready!</span>}
+              <div key={want.id} className="bg-slate-900 border border-slate-800 hover:border-slate-600 rounded-2xl transition-all">
+                {/* Card body — opens edit modal */}
+                <div onClick={() => setSelected(want)} className="p-5 space-y-3 cursor-pointer">
+                  <div className="flex items-start justify-between">
+                    <div className="flex items-center gap-2">
+                      <span className={`flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-full ${meta.color} ${meta.bg}`}>
+                        {meta.icon}{meta.label}
+                      </span>
+                      {ready && <span className="text-xs font-semibold text-green-400 bg-green-400/10 px-2.5 py-1 rounded-full">✅ Ready!</span>}
+                    </div>
+                    {daysLeft !== null && daysLeft > 0 && (
+                      <span className="text-xs text-slate-500">{daysLeft}d left</span>
+                    )}
                   </div>
-                  {daysLeft !== null && daysLeft > 0 && (
-                    <span className="text-xs text-slate-500">{daysLeft}d left</span>
+                  <p className="font-semibold text-base">{want.name}</p>
+                  <div className="space-y-1.5">
+                    <div className="h-2 bg-slate-800 rounded-full overflow-hidden">
+                      <div className="h-full rounded-full transition-all"
+                        style={{ width: `${pct}%`, background: ready ? '#22c55e' : (meta.color.includes('red') ? '#ef4444' : meta.color.includes('purple') ? '#a855f7' : '#14b8a6') }} />
+                    </div>
+                    <div className="flex justify-between text-sm">
+                      <span className={`font-semibold ${meta.color}`}>{formatCurrency(saved)}</span>
+                      <span className="text-slate-400">of {formatCurrency(want.targetAmount)}</span>
+                      <span className={`font-bold ${ready ? 'text-green-400' : ''}`}>{pct.toFixed(0)}%</span>
+                    </div>
+                  </div>
+                  {bucket?.accountId && (
+                    <p className="text-xs text-slate-500">
+                      Saved in: {accounts.find(a => a.id === bucket.accountId)?.name ?? 'Unknown account'}
+                    </p>
+                  )}
+                  {want.targetDate && (
+                    <p className="text-xs text-slate-500">🎯 Target: {formatDate(want.targetDate)}</p>
                   )}
                 </div>
-                <p className="font-semibold text-base">{want.name}</p>
-                <div className="space-y-1.5">
-                  <div className="h-2 bg-slate-800 rounded-full overflow-hidden">
-                    <div className="h-full rounded-full transition-all"
-                      style={{ width: `${pct}%`, background: ready ? '#22c55e' : (meta.color.includes('red') ? '#ef4444' : meta.color.includes('purple') ? '#a855f7' : '#14b8a6') }} />
-                  </div>
-                  <div className="flex justify-between text-sm">
-                    <span className={`font-semibold ${meta.color}`}>{formatCurrency(saved)}</span>
-                    <span className="text-slate-400">of {formatCurrency(want.targetAmount)}</span>
-                    <span className={`font-bold ${ready ? 'text-green-400' : ''}`}>{pct.toFixed(0)}%</span>
-                  </div>
+
+                {/* Mark as purchased button */}
+                <div className="px-5 pb-4 border-t border-slate-800 pt-3 flex justify-end">
+                  <button
+                    onClick={() => setPurchasing(want)}
+                    className="flex items-center gap-1.5 text-xs font-semibold text-yellow-400 bg-yellow-400/10 hover:bg-yellow-400/20 px-3 py-1.5 rounded-lg transition-colors">
+                    <Trophy size={13} /> Mark as purchased
+                  </button>
                 </div>
-                {bucket?.accountId && (
-                  <p className="text-xs text-slate-500">
-                    Saved in: {accounts.find(a => a.id === bucket.accountId)?.name ?? 'Unknown account'}
-                  </p>
-                )}
-                {want.targetDate && (
-                  <p className="text-xs text-slate-500">🎯 Target: {formatDate(want.targetDate)}</p>
-                )}
-              </button>
+              </div>
             )
           })}
         </div>
       )}
 
+      {/* Completed / Archived */}
+      {completedWants.length > 0 && (
+        <div className="space-y-3">
+          <h2 className="text-xs font-semibold text-slate-400 uppercase tracking-wide">
+            Completed ({completedWants.length})
+          </h2>
+          {completedWants.map(want => {
+            const meta = CAT_META[want.category]
+            const diff = want.purchasedAmount != null ? want.purchasedAmount - want.targetAmount : null
+            return (
+              <div key={want.id} className="bg-slate-900 border border-slate-800 rounded-2xl p-4 flex items-start gap-3">
+                <div className="w-9 h-9 rounded-full bg-green-500/10 flex items-center justify-center shrink-0 mt-0.5">
+                  <Trophy size={16} className="text-green-400" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 mb-0.5">
+                    <p className="font-semibold text-sm">{want.name}</p>
+                    <span className={`text-xs px-2 py-0.5 rounded-full ${meta.color} ${meta.bg}`}>{meta.label}</span>
+                  </div>
+                  <p className="text-xs text-slate-400">
+                    Spent <span className="font-semibold text-white">{formatCurrency(want.purchasedAmount ?? 0)}</span>
+                    <span className="text-slate-600"> · Goal was {formatCurrency(want.targetAmount)}</span>
+                    {diff !== null && diff !== 0 && (
+                      <span className={diff < 0 ? 'text-green-400' : 'text-orange-400'}>
+                        {' '}({diff < 0 ? `saved ${formatCurrency(-diff)}` : `over by ${formatCurrency(diff)}`})
+                      </span>
+                    )}
+                  </p>
+                  {want.purchasedAt && (
+                    <p className="text-xs text-slate-500 mt-0.5">Purchased on {formatDate(want.purchasedAt)}</p>
+                  )}
+                </div>
+                <button onClick={() => handleDeletePurchased(want)}
+                  className="text-slate-600 hover:text-red-400 p-1 transition-colors shrink-0">
+                  <Trash2 size={15} />
+                </button>
+              </div>
+            )
+          })}
+        </div>
+      )}
+
+      {/* Modals */}
       {showAdd && (
         <AddWantModal
           accounts={accounts.filter(a => a.type !== 'credit')}
@@ -163,18 +252,140 @@ export default function WantsPage() {
           onDelete={async () => { await deleteWant(selected.id); setSelected(null) }}
         />
       )}
+      {purchasing && (
+        <PurchaseModal
+          want={purchasing}
+          bucket={getBucketForWant(purchasing)}
+          accounts={accounts.filter(a => a.type !== 'credit')}
+          expenseCategories={expenseCategories}
+          onClose={() => setPurchasing(null)}
+          onConfirm={async (actualAmount, accountId, category, date, notes) => {
+            await handlePurchase(purchasing, actualAmount, accountId, category, date, notes)
+            setPurchasing(null)
+          }}
+        />
+      )}
     </div>
   )
 }
 
+// ─── Purchase Modal ───────────────────────────────────────────────────────────
+
+function PurchaseModal({ want, bucket, accounts, expenseCategories, onClose, onConfirm }: {
+  want: Want; bucket?: AccountBucket; accounts: Account[]
+  expenseCategories: Category[]
+  onClose: () => void
+  onConfirm: (actualAmount: number, accountId: string, category: Category, date: Date, notes: string) => Promise<void>
+}) {
+  const defaultAccountId = bucket?.accountId ?? accounts[0]?.id ?? ''
+  const [actualAmount, setActualAmount] = useState(String(want.targetAmount))
+  const [accountId, setAccountId]       = useState(defaultAccountId)
+  const [selectedCat, setSelectedCat]   = useState<Category | null>(null)
+  const [date, setDate]                 = useState(new Date().toISOString().split('T')[0])
+  const [notes, setNotes]               = useState('')
+  const [saving, setSaving]             = useState(false)
+  const [error, setError]               = useState<string | null>(null)
+
+  const canConfirm = actualAmount && Number(actualAmount) > 0 && accountId && selectedCat
+
+  const handleConfirm = async () => {
+    if (!canConfirm || !selectedCat) return
+    setSaving(true)
+    setError(null)
+    try {
+      await onConfirm(Number(actualAmount), accountId, selectedCat, new Date(date), notes)
+    } catch (e: any) {
+      setError(e?.message ?? 'Failed to save')
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/70 z-50 flex items-end lg:items-center justify-center" onClick={onClose}>
+      <div className="bg-slate-900 w-full lg:max-w-md rounded-t-2xl lg:rounded-2xl border border-slate-800 max-h-[92vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between p-5 border-b border-slate-800 sticky top-0 bg-slate-900">
+          <div>
+            <h2 className="text-lg font-bold">Mark as Purchased</h2>
+            <p className="text-xs text-slate-400">{want.name} · goal: {formatCurrency(want.targetAmount)}</p>
+          </div>
+          <button onClick={onClose} className="text-slate-400 hover:text-white"><X size={20} /></button>
+        </div>
+        <div className="p-5 space-y-4">
+          {/* Actual amount */}
+          <div>
+            <label className="text-xs text-slate-400 font-medium block mb-1.5">Actual amount spent (SGD)</label>
+            <input
+              type="number" value={actualAmount} onChange={e => setActualAmount(e.target.value)}
+              onKeyDown={e => ['e','E','+','-'].includes(e.key) && e.preventDefault()}
+              placeholder="0.00" min="0" step="0.01"
+              className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2.5 text-sm text-white outline-none focus:border-blue-500"
+            />
+            {bucket && (
+              <p className="text-xs text-slate-500 mt-1">Bucket had {formatCurrency(bucket.allocatedAmount)} allocated — remainder stays in account</p>
+            )}
+          </div>
+
+          {/* Date */}
+          <div>
+            <label className="text-xs text-slate-400 font-medium block mb-1.5">Purchase date</label>
+            <input type="date" value={date} onChange={e => setDate(e.target.value)}
+              className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2.5 text-sm text-white outline-none focus:border-blue-500" />
+          </div>
+
+          {/* Account */}
+          <div>
+            <label className="text-xs text-slate-400 font-medium block mb-1.5">Deduct from account</label>
+            <select value={accountId} onChange={e => setAccountId(e.target.value)}
+              className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2.5 text-sm text-white outline-none focus:border-blue-500">
+              {accounts.map(a => <option key={a.id} value={a.id}>{a.name} ({formatCurrency(a.balance)})</option>)}
+            </select>
+          </div>
+
+          {/* Category */}
+          <div>
+            <label className="text-xs text-slate-400 font-medium block mb-2">Expense category</label>
+            <div className="grid grid-cols-3 gap-2">
+              {expenseCategories.map(cat => (
+                <button key={cat.id} onClick={() => setSelectedCat(cat)}
+                  className={`flex items-center gap-2 p-2.5 rounded-xl text-sm transition-all ${
+                    selectedCat?.id === cat.id ? 'ring-2 ring-blue-500 bg-slate-800' : 'bg-slate-800 hover:bg-slate-700'
+                  }`}>
+                  <span className="text-base leading-none">{cat.icon}</span>
+                  <span className="text-xs text-slate-300 leading-tight truncate">{cat.name}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Notes */}
+          <div>
+            <label className="text-xs text-slate-400 font-medium block mb-1.5">Notes (optional)</label>
+            <input value={notes} onChange={e => setNotes(e.target.value)} placeholder="Where did you buy it?"
+              className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2.5 text-sm text-white outline-none focus:border-blue-500 placeholder-slate-600" />
+          </div>
+
+          {error && <p className="text-red-400 text-sm text-center">{error}</p>}
+
+          <button onClick={handleConfirm} disabled={!canConfirm || saving}
+            className="w-full bg-green-600 hover:bg-green-700 disabled:opacity-40 text-white font-bold py-3.5 rounded-xl transition-colors flex items-center justify-center gap-2">
+            <Trophy size={16} /> {saving ? 'Saving…' : 'Confirm Purchase'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ─── Add Want Modal ───────────────────────────────────────────────────────────
+
 function AddWantModal({ accounts, onClose, onSave }: { accounts: any[]; onClose: () => void; onSave: (data: Omit<Want, 'id' | 'createdAt'>, accountId?: string) => void }) {
-  const [name, setName] = useState('')
-  const [category, setCategory] = useState<WantCategory>('dream')
+  const [name, setName]               = useState('')
+  const [category, setCategory]       = useState<WantCategory>('dream')
   const [targetAmount, setTargetAmount] = useState('')
-  const [hasDate, setHasDate] = useState(false)
-  const [targetDate, setTargetDate] = useState('')
-  const [notes, setNotes] = useState('')
-  const [accountId, setAccountId] = useState(accounts[0]?.id ?? '')
+  const [hasDate, setHasDate]         = useState(false)
+  const [targetDate, setTargetDate]   = useState('')
+  const [notes, setNotes]             = useState('')
+  const [accountId, setAccountId]     = useState(accounts[0]?.id ?? '')
 
   return (
     <div className="fixed inset-0 bg-black/70 z-50 flex items-end lg:items-center justify-center" onClick={onClose}>
@@ -204,6 +415,7 @@ function AddWantModal({ accounts, onClose, onSave }: { accounts: any[]; onClose:
           <div>
             <label className="text-xs text-slate-400 font-medium block mb-1.5">Target amount (SGD)</label>
             <input value={targetAmount} onChange={e => setTargetAmount(e.target.value)} type="number" placeholder="0.00"
+              onKeyDown={e => ['e','E','+','-'].includes(e.key) && e.preventDefault()}
               className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2.5 text-sm text-white outline-none focus:border-blue-500 placeholder-slate-600" />
           </div>
           <label className="flex items-center gap-3 cursor-pointer">
@@ -241,6 +453,8 @@ function AddWantModal({ accounts, onClose, onSave }: { accounts: any[]; onClose:
   )
 }
 
+// ─── Edit Want Modal ──────────────────────────────────────────────────────────
+
 function EditWantModal({ want, bucket, account, onClose, onUpdateState, onAddToSavings, onDelete }: {
   want: Want; bucket?: any; account?: any
   onClose: () => void; onUpdateState: (s: WantState) => void
@@ -248,8 +462,8 @@ function EditWantModal({ want, bucket, account, onClose, onUpdateState, onAddToS
 }) {
   const [addAmount, setAddAmount] = useState('')
   const saved = bucket?.allocatedAmount ?? 0
-  const pct = want.targetAmount > 0 ? Math.min(100, (saved / want.targetAmount) * 100) : 0
-  const meta = CAT_META[want.category]
+  const pct   = want.targetAmount > 0 ? Math.min(100, (saved / want.targetAmount) * 100) : 0
+  const meta  = CAT_META[want.category]
 
   return (
     <div className="fixed inset-0 bg-black/70 z-50 flex items-end lg:items-center justify-center" onClick={onClose}>
@@ -262,7 +476,6 @@ function EditWantModal({ want, bucket, account, onClose, onUpdateState, onAddToS
           <button onClick={onClose} className="text-slate-400 hover:text-white"><X size={20} /></button>
         </div>
         <div className="p-5 space-y-5">
-          {/* Progress */}
           <div className="space-y-2">
             <div className="h-3 bg-slate-800 rounded-full overflow-hidden">
               <div className="h-full rounded-full transition-all" style={{ width: `${pct}%`, background: pct >= 100 ? '#22c55e' : (meta.color.includes('red') ? '#ef4444' : meta.color.includes('purple') ? '#a855f7' : '#14b8a6') }} />
@@ -277,7 +490,6 @@ function EditWantModal({ want, bucket, account, onClose, onUpdateState, onAddToS
             {want.targetDate && <p className="text-xs text-slate-500">🎯 Target date: {formatDate(want.targetDate)}</p>}
           </div>
 
-          {/* Add to savings */}
           {bucket && account && (
             <div>
               <label className="text-xs text-slate-400 font-medium block mb-2">
@@ -285,6 +497,7 @@ function EditWantModal({ want, bucket, account, onClose, onUpdateState, onAddToS
               </label>
               <div className="flex gap-2">
                 <input value={addAmount} onChange={e => setAddAmount(e.target.value)} type="number" placeholder="Amount to allocate"
+                  onKeyDown={e => ['e','E','+','-'].includes(e.key) && e.preventDefault()}
                   className="flex-1 bg-slate-800 border border-slate-700 rounded-xl px-3 py-2.5 text-sm text-white outline-none focus:border-blue-500 placeholder-slate-600" />
                 <button onClick={() => { if (addAmount) { onAddToSavings(Number(addAmount)); setAddAmount('') } }}
                   disabled={!addAmount}
@@ -295,7 +508,6 @@ function EditWantModal({ want, bucket, account, onClose, onUpdateState, onAddToS
             </div>
           )}
 
-          {/* State toggle */}
           <div>
             <label className="text-xs text-slate-400 font-medium block mb-2">Status</label>
             <div className="flex gap-2">

@@ -94,6 +94,7 @@ export function useAccounts() {
     }
 
     await batch.commit()
+    return txRef.id
   }
 
   const updateTransaction = async (

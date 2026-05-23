@@ -67,12 +67,16 @@ export interface Want {
   id: string
   name: string
   category: 'needs' | 'dream' | 'vacation'
-  state: 'saving' | 'readyToBuy'
+  state: 'saving' | 'readyToBuy' | 'purchased'
   targetAmount: number
   targetDate?: Timestamp
   bucketId?: string
   notes: string
   createdAt: Timestamp
+  purchasedAmount?: number
+  purchasedAt?: Timestamp
+  purchaseTransactionId?: string
+  purchaseAccountId?: string
 }
 
 export interface CPFData {
