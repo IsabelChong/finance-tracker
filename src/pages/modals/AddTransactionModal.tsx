@@ -17,7 +17,7 @@ interface Props {
   expenseCategories: Category[]
   incomeCategories: Category[]
   initialTx?: Transaction
-  onSave?: (tx: TxData) => Promise<void>
+  onSave?: (tx: TxData) => Promise<string | undefined | void>
   onUpdate?: (txId: string, old: { amount: number; type: string; accountId: string; toAccountId?: string }, newTx: TxData) => Promise<void>
   onClose: () => void
 }

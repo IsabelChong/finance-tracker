@@ -20,12 +20,14 @@ export function useWants() {
 
   const addWant = async (data: Omit<Want, 'id' | 'createdAt'>) => {
     if (!user) return
-    return await addDoc(collection(db, wantsCol(user.uid)), { ...data, createdAt: serverTimestamp() })
+    const payload = Object.fromEntries(Object.entries({ ...data, createdAt: serverTimestamp() }).filter(([, v]) => v !== undefined))
+    return await addDoc(collection(db, wantsCol(user.uid)), payload)
   }
 
   const updateWant = async (id: string, data: Partial<Want>) => {
     if (!user) return
-    await updateDoc(doc(db, wantsCol(user.uid), id), data as Record<string, unknown>)
+    const payload = Object.fromEntries(Object.entries(data).filter(([, v]) => v !== undefined))
+    await updateDoc(doc(db, wantsCol(user.uid), id), payload as Record<string, unknown>)
   }
 
   const deleteWant = async (id: string) => {

@@ -28,6 +28,7 @@ export default function WantsPage() {
   const [showAdd, setShowAdd]         = useState(false)
   const [selected, setSelected]       = useState<Want | null>(null)
   const [purchasing, setPurchasing]   = useState<Want | null>(null)
+  const [readdingWant, setReaddingWant] = useState<Want | null>(null)
 
   const activeWants    = wants.filter(w => w.state !== 'purchased')
   const completedWants = wants.filter(w => w.state === 'purchased')
@@ -59,7 +60,6 @@ export default function WantsPage() {
       purchasedAt: Timestamp.fromDate(date),
       purchaseTransactionId: txId,
       purchaseAccountId: accountId,
-      bucketId: undefined,
     } as Partial<Want>)
   }
 
@@ -213,10 +213,16 @@ export default function WantsPage() {
                     <p className="text-xs text-slate-500 mt-0.5">Purchased on {formatDate(want.purchasedAt)}</p>
                   )}
                 </div>
-                <button onClick={() => handleDeletePurchased(want)}
-                  className="text-slate-600 hover:text-red-400 p-1 transition-colors shrink-0">
-                  <Trash2 size={15} />
-                </button>
+                <div className="flex flex-col items-end gap-1 shrink-0">
+                  <button onClick={() => setReaddingWant(want)}
+                    className="text-xs text-slate-500 hover:text-blue-400 transition-colors px-2 py-1 rounded-lg hover:bg-slate-800 whitespace-nowrap">
+                    + Re-add transaction
+                  </button>
+                  <button onClick={() => handleDeletePurchased(want)}
+                    className="text-slate-600 hover:text-red-400 p-1 transition-colors">
+                    <Trash2 size={15} />
+                  </button>
+                </div>
               </div>
             )
           })}
@@ -262,6 +268,30 @@ export default function WantsPage() {
           onConfirm={async (actualAmount, accountId, category, date, notes) => {
             await handlePurchase(purchasing, actualAmount, accountId, category, date, notes)
             setPurchasing(null)
+          }}
+        />
+      )}
+      {readdingWant && (
+        <ReaddTransactionModal
+          want={readdingWant}
+          accounts={accounts.filter(a => a.type !== 'credit')}
+          expenseCategories={expenseCategories}
+          onClose={() => setReaddingWant(null)}
+          onConfirm={async (amount, accountId, category, date, notes) => {
+            const acc = accounts.find(a => a.id === accountId)
+            const txId = await addTransaction({
+              date, amount, type: 'expense',
+              categoryName: category.name, categoryIcon: category.icon, categoryColor: category.colorHex,
+              accountId, accountName: acc?.name ?? '',
+              payee: readdingWant.name, notes,
+            })
+            await updateWant(readdingWant.id, {
+              purchaseTransactionId: txId,
+              purchasedAmount: amount,
+              purchasedAt: Timestamp.fromDate(date),
+              purchaseAccountId: accountId,
+            } as Partial<Want>)
+            setReaddingWant(null)
           }}
         />
       )}
@@ -369,6 +399,100 @@ function PurchaseModal({ want, bucket, accounts, expenseCategories, onClose, onC
           <button onClick={handleConfirm} disabled={!canConfirm || saving}
             className="w-full bg-green-600 hover:bg-green-700 disabled:opacity-40 text-white font-bold py-3.5 rounded-xl transition-colors flex items-center justify-center gap-2">
             <Trophy size={16} /> {saving ? 'Saving…' : 'Confirm Purchase'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ─── Re-add Transaction Modal ────────────────────────────────────────────────
+
+function ReaddTransactionModal({ want, accounts, expenseCategories, onClose, onConfirm }: {
+  want: Want; accounts: Account[]
+  expenseCategories: Category[]
+  onClose: () => void
+  onConfirm: (amount: number, accountId: string, category: Category, date: Date, notes: string) => Promise<void>
+}) {
+  const defaultAccountId = want.purchaseAccountId ?? accounts[0]?.id ?? ''
+  const purchasedDate = want.purchasedAt ? toDate(want.purchasedAt).toISOString().split('T')[0] : new Date().toISOString().split('T')[0]
+  const [amount, setAmount]           = useState(String(want.purchasedAmount ?? ''))
+  const [accountId, setAccountId]     = useState(defaultAccountId)
+  const [selectedCat, setSelectedCat] = useState<Category | null>(null)
+  const [date, setDate]               = useState(purchasedDate)
+  const [notes, setNotes]             = useState('')
+  const [saving, setSaving]           = useState(false)
+  const [error, setError]             = useState<string | null>(null)
+
+  const canConfirm = amount && Number(amount) > 0 && accountId && selectedCat
+
+  const handleConfirm = async () => {
+    if (!canConfirm || !selectedCat) return
+    setSaving(true)
+    setError(null)
+    try {
+      await onConfirm(Number(amount), accountId, selectedCat, new Date(date), notes)
+    } catch (e: any) {
+      setError(e?.message ?? 'Failed to save')
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/70 z-50 flex items-end lg:items-center justify-center" onClick={onClose}>
+      <div className="bg-slate-900 w-full lg:max-w-md rounded-t-2xl lg:rounded-2xl border border-slate-800 max-h-[92vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between p-5 border-b border-slate-800 sticky top-0 bg-slate-900">
+          <div>
+            <h2 className="text-lg font-bold">Re-add Transaction</h2>
+            <p className="text-xs text-slate-400">{want.name}</p>
+          </div>
+          <button onClick={onClose} className="text-slate-400 hover:text-white"><X size={20} /></button>
+        </div>
+        <div className="p-5 space-y-4">
+          <div>
+            <label className="text-xs text-slate-400 font-medium block mb-1.5">Amount (SGD)</label>
+            <input
+              type="number" value={amount} onChange={e => setAmount(e.target.value)}
+              onKeyDown={e => ['e','E','+','-'].includes(e.key) && e.preventDefault()}
+              placeholder="0.00" min="0" step="0.01"
+              className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2.5 text-sm text-white outline-none focus:border-blue-500"
+            />
+          </div>
+          <div>
+            <label className="text-xs text-slate-400 font-medium block mb-1.5">Purchase date</label>
+            <input type="date" value={date} onChange={e => setDate(e.target.value)}
+              className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2.5 text-sm text-white outline-none focus:border-blue-500" />
+          </div>
+          <div>
+            <label className="text-xs text-slate-400 font-medium block mb-1.5">Deduct from account</label>
+            <select value={accountId} onChange={e => setAccountId(e.target.value)}
+              className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2.5 text-sm text-white outline-none focus:border-blue-500">
+              {accounts.map(a => <option key={a.id} value={a.id}>{a.name} ({formatCurrency(a.balance)})</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="text-xs text-slate-400 font-medium block mb-2">Expense category</label>
+            <div className="grid grid-cols-3 gap-2">
+              {expenseCategories.map(cat => (
+                <button key={cat.id} onClick={() => setSelectedCat(cat)}
+                  className={`flex items-center gap-2 p-2.5 rounded-xl text-sm transition-all ${
+                    selectedCat?.id === cat.id ? 'ring-2 ring-blue-500 bg-slate-800' : 'bg-slate-800 hover:bg-slate-700'
+                  }`}>
+                  <span className="text-base leading-none">{cat.icon}</span>
+                  <span className="text-xs text-slate-300 leading-tight truncate">{cat.name}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+          <div>
+            <label className="text-xs text-slate-400 font-medium block mb-1.5">Notes (optional)</label>
+            <input value={notes} onChange={e => setNotes(e.target.value)} placeholder="Optional note"
+              className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2.5 text-sm text-white outline-none focus:border-blue-500 placeholder-slate-600" />
+          </div>
+          {error && <p className="text-red-400 text-sm text-center">{error}</p>}
+          <button onClick={handleConfirm} disabled={!canConfirm || saving}
+            className="w-full bg-blue-600 hover:bg-blue-700 disabled:opacity-40 text-white font-bold py-3.5 rounded-xl transition-colors flex items-center justify-center gap-2">
+            {saving ? 'Saving…' : 'Re-add Transaction'}
           </button>
         </div>
       </div>
