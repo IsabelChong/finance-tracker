@@ -4,6 +4,7 @@ import { useAccounts } from '../hooks/useAccounts'
 import { useWants } from '../hooks/useWants'
 import { useTransactions } from '../hooks/useTransactions'
 import { formatCurrency, formatDate } from '../lib/utils'
+import { useFXRates } from '../contexts/FXRatesContext'
 import { Account, AccountBucket } from '../types'
 import DatePicker from '../components/DatePicker'
 
@@ -17,6 +18,7 @@ export default function AccountsPage() {
   const { accounts, buckets, addAccount, updateAccount, deleteAccount, reorderAccounts, addBucket, updateBucket, deleteBucket, reorderBuckets, addTransaction, bucketsForAccount, allocatedForAccount } = useAccounts()
   const { wants, updateWant } = useWants()
   const { transactions } = useTransactions()
+  const { toSGD } = useFXRates()
   const [modal, setModal] = useState<Modal>(null)
   const [reorderMode, setReorderMode] = useState(false)
   const [dragState, setDragState] = useState<DragState | null>(null)
@@ -24,8 +26,8 @@ export default function AccountsPage() {
   const bankAccounts   = accounts.filter(a => a.type === 'savings' || a.type === 'cash')
   const brokerAccounts = accounts.filter(a => a.type === 'investment')
   const creditAccounts = accounts.filter(a => a.type === 'credit')
-  const totalSavings = accounts.filter(a => a.type !== 'credit').reduce((s, a) => s + a.balance, 0)
-  const totalDebt    = creditAccounts.reduce((s, a) => s + a.balance, 0)
+  const totalSavings = accounts.filter(a => a.type !== 'credit').reduce((s, a) => s + toSGD(a.balance, a.currency), 0)
+  const totalDebt    = creditAccounts.reduce((s, a) => s + toSGD(a.balance, a.currency), 0)
 
   const handleDrop = (section: 'bank' | 'broker' | 'credit', toIdx: number) => {
     if (!dragState || dragState.section !== section || dragState.from === toIdx) { setDragState(null); return }
@@ -239,7 +241,7 @@ function AccountRow({ account, allocated, onClick, reorderMode }: {
         )}
       </div>
       <div className="text-right shrink-0">
-        <p className={`font-bold ${account.type === 'credit' ? 'text-red-400' : ''}`}>{formatCurrency(account.balance)}</p>
+        <p className={`font-bold ${account.type === 'credit' ? 'text-red-400' : ''}`}>{formatCurrency(account.balance, account.currency)}</p>
         {account.type === 'credit' && <p className="text-xs text-red-400">owed</p>}
       </div>
       {!reorderMode && <ChevronRight size={16} className="text-slate-600" />}
@@ -301,7 +303,7 @@ function AccountDetailModal({ account, buckets, transactions, wants, onClose, on
           {/* Balance */}
           <div className="text-center">
             <p className="text-xs text-slate-400 mb-1">{account.type === 'credit' ? 'Balance Owed' : 'Balance'}</p>
-            <p className={`text-4xl font-bold ${account.type === 'credit' ? 'text-red-400' : ''}`}>{formatCurrency(account.balance)}</p>
+            <p className={`text-4xl font-bold ${account.type === 'credit' ? 'text-red-400' : ''}`}>{formatCurrency(account.balance, account.currency)}</p>
             <div className="flex flex-wrap justify-center gap-2 mt-3">
               {!showReconcile && (
                 <button onClick={() => setShowReconcile(true)} className="inline-flex items-center gap-1.5 text-xs font-medium text-slate-400 hover:text-blue-400 px-3 py-1.5 bg-slate-800 hover:bg-slate-700 rounded-lg transition-colors">
@@ -545,11 +547,14 @@ function BucketAmountEditor({ bucket, onUpdate }: { bucket: AccountBucket; onUpd
   )
 }
 
+const ACCOUNT_CURRENCIES = ['SGD', 'MYR', 'JPY', 'USD', 'HKD', 'GBP', 'EUR']
+
 function AddAccountModal({ onClose, onSave }: { onClose: () => void; onSave: (data: any) => void }) {
   const [name, setName] = useState('')
   const [type, setType] = useState<'savings' | 'cash' | 'investment' | 'credit'>('savings')
   const [institution, setInstitution] = useState('')
   const [balance, setBalance] = useState('')
+  const [currency, setCurrency] = useState('SGD')
   const [colorHex, setColorHex] = useState('#3b82f6')
 
   return (
@@ -582,8 +587,19 @@ function AddAccountModal({ onClose, onSave }: { onClose: () => void; onSave: (da
             </div>
           </div>
           <div>
+            <label className="text-xs text-slate-400 font-medium block mb-1.5">Currency</label>
+            <div className="flex flex-wrap gap-2">
+              {ACCOUNT_CURRENCIES.map(c => (
+                <button key={c} onClick={() => setCurrency(c)}
+                  className={`px-3 py-1.5 rounded-full text-sm font-medium transition-colors ${currency === c ? 'bg-blue-600 text-white' : 'bg-slate-800 text-slate-400 hover:text-white'}`}>
+                  {c}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div>
             <label className="text-xs text-slate-400 font-medium block mb-1.5">
-              {type === 'credit' ? 'Current balance owed (SGD)' : type === 'investment' ? 'Idle cash balance (SGD)' : 'Opening balance (SGD)'}
+              {type === 'credit' ? `Current balance owed (${currency})` : type === 'investment' ? `Idle cash balance (${currency})` : `Opening balance (${currency})`}
             </label>
             <input value={balance} onChange={e => setBalance(e.target.value)} type="number" placeholder="0.00"
               className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2.5 text-sm text-white outline-none focus:border-blue-500 placeholder-slate-600" />
@@ -598,7 +614,7 @@ function AddAccountModal({ onClose, onSave }: { onClose: () => void; onSave: (da
               ))}
             </div>
           </div>
-          <button onClick={() => onSave({ name, type, institution, balance: Number(balance) || 0, currency: 'SGD', colorHex })}
+          <button onClick={() => onSave({ name, type, institution, balance: Number(balance) || 0, currency, colorHex })}
             disabled={!name}
             className="w-full bg-blue-600 hover:bg-blue-700 disabled:opacity-40 text-white font-bold py-3.5 rounded-xl transition-colors">
             Add Account

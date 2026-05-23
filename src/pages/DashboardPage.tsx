@@ -9,6 +9,7 @@ import { useTransactions } from '../hooks/useTransactions'
 import { useInvestments } from '../hooks/useInvestments'
 import { useCategories } from '../hooks/useCategories'
 import { useCPF } from '../hooks/useCPF'
+import { useFXRates } from '../contexts/FXRatesContext'
 import { formatCurrency, monthLabel, addMonths } from '../lib/utils'
 import AddTransactionModal from './modals/AddTransactionModal'
 import { Transaction } from '../types'
@@ -67,11 +68,12 @@ export default function DashboardPage() {
   const { totalValueSGD, totalCostSGD, totalGainLossSGD, totalGainLossPct, investments, cpfOaCurrentValueSGD } = useInvestments()
   const { expenseCategories, incomeCategories } = useCategories()
   const { totalCPF } = useCPF()
+  const { toSGD } = useFXRates()
 
   const { forMonth, income, expenses, yearlyMonths, catTotals } = useDashStats(transactions)
 
-  const totalAssets      = accounts.filter(a => a.type !== 'credit').reduce((s, a) => s + a.balance, 0)
-  const totalLiabilities = accounts.filter(a => a.type === 'credit').reduce((s, a) => s + a.balance, 0)
+  const totalAssets      = accounts.filter(a => a.type !== 'credit').reduce((s, a) => s + toSGD(a.balance, a.currency), 0)
+  const totalLiabilities = accounts.filter(a => a.type === 'credit').reduce((s, a) => s + toSGD(a.balance, a.currency), 0)
   const cashInvestedSGD  = totalValueSGD - cpfOaCurrentValueSGD
   const effectiveCPF     = totalCPF + cpfOaCurrentValueSGD
   const netWorth         = totalAssets - totalLiabilities + cashInvestedSGD + effectiveCPF

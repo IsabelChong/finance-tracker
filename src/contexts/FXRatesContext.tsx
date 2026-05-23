@@ -3,7 +3,7 @@ import { createContext, useContext, useState } from 'react'
 type FXRates = Record<string, number>
 
 // 1 foreign unit = X SGD
-const DEFAULTS: FXRates = { SGD: 1, USD: 1.35, HKD: 0.17, GBP: 1.72, EUR: 1.47 }
+const DEFAULTS: FXRates = { SGD: 1, USD: 1.35, HKD: 0.17, GBP: 1.72, EUR: 1.47, MYR: 0.30, JPY: 0.0088 }
 
 interface FXRatesCtx {
   rates: FXRates
