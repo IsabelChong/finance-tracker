@@ -23,3 +23,5 @@ export const transactionsCol = (uid: string) => `users/${uid}/transactions`
 export const categoriesCol = (uid: string) => `users/${uid}/categories`
 export const investmentsCol = (uid: string) => `users/${uid}/investments`
 export const wantsCol = (uid: string) => `users/${uid}/wants`
+export const cpfDoc = (uid: string) => `users/${uid}/cpf/main`
+export const housingGoalsCol = (uid: string) => `users/${uid}/housingGoals`

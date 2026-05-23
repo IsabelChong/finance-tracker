@@ -8,6 +8,7 @@ import { useAccounts } from '../hooks/useAccounts'
 import { useTransactions } from '../hooks/useTransactions'
 import { useInvestments } from '../hooks/useInvestments'
 import { useCategories } from '../hooks/useCategories'
+import { useCPF } from '../hooks/useCPF'
 import { formatCurrency, monthLabel, addMonths } from '../lib/utils'
 import AddTransactionModal from './modals/AddTransactionModal'
 import { Transaction } from '../types'
@@ -65,12 +66,13 @@ export default function DashboardPage() {
   const { transactions } = useTransactions()
   const { totalValue, totalCost, totalGainLoss, totalGainLossPct, investments } = useInvestments()
   const { expenseCategories, incomeCategories } = useCategories()
+  const { totalCPF } = useCPF()
 
   const { forMonth, income, expenses, yearlyMonths, catTotals } = useDashStats(transactions)
 
   const totalAssets      = accounts.filter(a => a.type !== 'credit').reduce((s, a) => s + a.balance, 0)
   const totalLiabilities = accounts.filter(a => a.type === 'credit').reduce((s, a) => s + a.balance, 0)
-  const netWorth         = totalAssets - totalLiabilities + totalValue
+  const netWorth         = totalAssets - totalLiabilities + totalValue + totalCPF
 
   const isCurrentMonth = isSameMonthYear(month, new Date())
 
@@ -91,10 +93,11 @@ export default function DashboardPage() {
       <div className="bg-gradient-to-br from-blue-600 to-blue-800 rounded-2xl p-5">
         <p className="text-blue-200 text-sm font-medium">Net Worth</p>
         <p className="text-4xl font-bold mt-1">{formatCurrency(netWorth)}</p>
-        <div className="flex gap-5 mt-4">
+        <div className="flex gap-5 mt-4 flex-wrap">
           <Stat label="Cash" value={formatCurrency(totalAssets)} color="text-green-300" />
-          <Stat label="Debt" value={formatCurrency(totalLiabilities)} color="text-red-300" />
           <Stat label="Invested" value={formatCurrency(totalValue)} color="text-purple-300" />
+          {totalCPF > 0 && <Stat label="CPF" value={formatCurrency(totalCPF)} color="text-yellow-300" />}
+          {totalLiabilities > 0 && <Stat label="Debt" value={formatCurrency(totalLiabilities)} color="text-red-300" />}
         </div>
       </div>
 
@@ -138,6 +141,7 @@ export default function DashboardPage() {
           totalValue={totalValue} totalCost={totalCost}
           totalGainLoss={totalGainLoss} totalGainLossPct={totalGainLossPct}
           totalAssets={totalAssets} totalLiabilities={totalLiabilities} netWorth={netWorth}
+          totalCPF={totalCPF}
           income={income} expenses={expenses}
           allocatedForAccount={allocatedForAccount}
           bucketsForAccount={bucketsForAccount}
@@ -410,11 +414,11 @@ function YearTab({ yearlyMonths, income, expenses, transactions, catTotals }: {
 
 // ─── All Time Tab ─────────────────────────────────────────────────────────────
 
-function AllTimeTab({ transactions, accounts, investments, totalValue, totalCost, totalGainLoss, totalGainLossPct, totalAssets, totalLiabilities, netWorth, income, expenses, allocatedForAccount, bucketsForAccount }: {
+function AllTimeTab({ transactions, accounts, investments, totalValue, totalCost, totalGainLoss, totalGainLossPct, totalAssets, totalLiabilities, netWorth, totalCPF, income, expenses, allocatedForAccount, bucketsForAccount }: {
   transactions: Transaction[]
   accounts: any[]; investments: any[]
   totalValue: number; totalCost: number; totalGainLoss: number; totalGainLossPct: number
-  totalAssets: number; totalLiabilities: number; netWorth: number
+  totalAssets: number; totalLiabilities: number; netWorth: number; totalCPF: number
   income: (txs: Transaction[]) => number
   expenses: (txs: Transaction[]) => number
   allocatedForAccount: (id: string) => number
@@ -431,6 +435,7 @@ function AllTimeTab({ transactions, accounts, investments, totalValue, totalCost
   const netWorthPie = [
     { name: 'Cash & Savings', value: totalAssets, color: '#22c55e' },
     { name: 'Investments', value: totalValue, color: '#8b5cf6' },
+    totalCPF > 0 ? { name: 'CPF', value: totalCPF, color: '#f59e0b' } : null,
     totalLiabilities > 0 ? { name: 'Debt (owed)', value: totalLiabilities, color: '#ef4444' } : null,
   ].filter(Boolean) as { name: string; value: number; color: string }[]
 

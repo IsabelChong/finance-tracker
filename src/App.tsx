@@ -7,6 +7,7 @@ import TransactionsPage from './pages/TransactionsPage'
 import AccountsPage from './pages/AccountsPage'
 import InvestmentsPage from './pages/InvestmentsPage'
 import WantsPage from './pages/WantsPage'
+import CPFPage from './pages/CPFPage'
 
 function AppRoutes() {
   const { user, loading } = useAuth()
@@ -30,6 +31,7 @@ function AppRoutes() {
           <Route path="/accounts" element={<AccountsPage />} />
           <Route path="/investments" element={<InvestmentsPage />} />
           <Route path="/wants" element={<WantsPage />} />
+          <Route path="/cpf" element={<CPFPage />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Route>
       </Routes>

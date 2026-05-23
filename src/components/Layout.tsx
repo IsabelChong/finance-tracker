@@ -1,5 +1,5 @@
 import { NavLink, Outlet } from 'react-router-dom'
-import { LayoutDashboard, ArrowLeftRight, CreditCard, TrendingUp, Star, LogOut } from 'lucide-react'
+import { LayoutDashboard, ArrowLeftRight, CreditCard, TrendingUp, Star, Building2, LogOut } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
 
 const navItems = [
@@ -8,6 +8,7 @@ const navItems = [
   { to: '/accounts',    icon: CreditCard,      label: 'Accounts'     },
   { to: '/investments', icon: TrendingUp,      label: 'Investments'  },
   { to: '/wants',       icon: Star,            label: 'Wants'        },
+  { to: '/cpf',         icon: Building2,       label: 'CPF'          },
 ]
 
 export default function Layout() {

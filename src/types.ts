@@ -75,6 +75,26 @@ export interface Want {
   createdAt: Timestamp
 }
 
+export interface CPFData {
+  ordinaryBalance: number
+  ordinaryLastUpdated?: Timestamp
+  specialBalance: number
+  specialLastUpdated?: Timestamp
+  medisaveBalance: number
+  medisaveLastUpdated?: Timestamp
+}
+
+export interface HousingGoal {
+  id: string
+  name: string
+  targetPrice: number
+  cpfOAPlanned: number
+  cashDownPayment: number
+  targetDate?: Timestamp
+  notes: string
+  createdAt: Timestamp
+}
+
 export const DEFAULT_EXPENSE_CATEGORIES: Omit<Category, 'id'>[] = [
   { name: 'Food & Dining',    icon: '🍽️', colorHex: '#FF6B35', type: 'expense', sortOrder: 0,  isDefault: true },
   { name: 'Groceries',        icon: '🛒', colorHex: '#FF9F1C', type: 'expense', sortOrder: 1,  isDefault: true },
