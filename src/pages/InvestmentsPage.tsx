@@ -1,53 +1,75 @@
 import { useState } from 'react'
-import { Plus, X, RefreshCw, TrendingUp, TrendingDown, ChevronDown, ChevronRight, ArrowDownToLine } from 'lucide-react'
+import { Plus, X, RefreshCw, TrendingUp, TrendingDown, ChevronDown, ChevronRight, ArrowDownToLine, Pencil } from 'lucide-react'
 import { Account } from '../types'
 import DatePicker from '../components/DatePicker'
 import { useInvestments } from '../hooks/useInvestments'
 import { useAccounts } from '../hooks/useAccounts'
-import { formatCurrency, formatPercent, formatDate } from '../lib/utils'
+import { useFXRates } from '../contexts/FXRatesContext'
+import { formatCurrency, formatWithCurrency, formatPercent, formatDate } from '../lib/utils'
 import { Investment } from '../types'
 import { Timestamp } from 'firebase/firestore'
 
 interface TickerGroup {
   ticker: string
   name: string
+  currency: string
   lots: Investment[]
   totalShares: number
   totalCost: number
   totalValue: number
+  totalValueSGD: number
   weightedAvgCost: number
   gainLoss: number
   gainLossPct: number
 }
 
-function groupByTicker(investments: Investment[]): TickerGroup[] {
+function groupByTicker(investments: Investment[], toSGD: (amount: number, currency: string) => number): TickerGroup[] {
   const map: Record<string, Investment[]> = {}
   for (const inv of investments) {
     if (!map[inv.ticker]) map[inv.ticker] = []
     map[inv.ticker].push(inv)
   }
   return Object.entries(map).map(([ticker, lots]) => {
+    const currency = lots[0]?.currency ?? 'USD'
     const totalShares = lots.reduce((s, l) => s + l.shares, 0)
     const totalCost = lots.reduce((s, l) => s + l.shares * l.purchasePrice, 0)
     const totalValue = lots.reduce((s, l) => s + l.shares * l.currentPrice, 0)
+    const totalValueSGD = toSGD(totalValue, currency)
     const weightedAvgCost = totalShares > 0 ? totalCost / totalShares : 0
     const gainLoss = totalValue - totalCost
     const gainLossPct = totalCost > 0 ? (gainLoss / totalCost) * 100 : 0
     const name = lots.find(l => l.name)?.name ?? ''
-    return { ticker, name, lots, totalShares, totalCost, totalValue, weightedAvgCost, gainLoss, gainLossPct }
+    return { ticker, name, currency, lots, totalShares, totalCost, totalValue, totalValueSGD, weightedAvgCost, gainLoss, gainLossPct }
   })
 }
 
 export default function InvestmentsPage() {
-  const { investments, addInvestment, updateInvestment, deleteInvestment, updatePricesByTicker, totalCost, totalValue, totalGainLoss, totalGainLossPct } = useInvestments()
+  const { investments, addInvestment, updateInvestment, deleteInvestment, updatePricesByTicker, totalCostSGD, totalValueSGD, totalGainLossSGD, totalGainLossPct } = useInvestments()
   const { accounts, addTransaction } = useAccounts()
+  const { rates, updateRate, toSGD } = useFXRates()
   const [showAdd, setShowAdd] = useState(false)
   const [showUpdatePrices, setShowUpdatePrices] = useState(false)
   const [selected, setSelected] = useState<Investment | null>(null)
   const [showFund, setShowFund] = useState(false)
   const [expandedTickers, setExpandedTickers] = useState<Set<string>>(new Set())
+  const [editingFX, setEditingFX] = useState(false)
+  const [fxDraft, setFxDraft] = useState<Record<string, string>>({})
 
-  const groups = groupByTicker(investments)
+  const groups = groupByTicker(investments, toSGD)
+
+  const FX_CURRENCIES = ['USD', 'HKD', 'GBP', 'EUR']
+
+  const startEditFX = () => {
+    setFxDraft(Object.fromEntries(FX_CURRENCIES.map(c => [c, String(rates[c] ?? '')])))
+    setEditingFX(true)
+  }
+  const saveFX = () => {
+    for (const c of FX_CURRENCIES) {
+      const v = Number(fxDraft[c])
+      if (v > 0) updateRate(c, v)
+    }
+    setEditingFX(false)
+  }
 
   const toggleTicker = (ticker: string) => {
     setExpandedTickers(prev => {
@@ -73,16 +95,55 @@ export default function InvestmentsPage() {
         </div>
       </div>
 
+      {/* FX rates widget */}
+      <div className="bg-slate-900 border border-slate-800 rounded-xl px-4 py-3">
+        <div className="flex items-center justify-between mb-2">
+          <span className="text-xs font-semibold text-slate-400">Exchange Rates (to SGD)</span>
+          {editingFX
+            ? <button onClick={saveFX} className="text-xs font-semibold text-blue-400 hover:text-blue-300 transition-colors">Save</button>
+            : <button onClick={startEditFX} className="text-slate-500 hover:text-slate-300 transition-colors"><Pencil size={13} /></button>
+          }
+        </div>
+        {editingFX ? (
+          <div className="grid grid-cols-4 gap-2">
+            {FX_CURRENCIES.map(c => (
+              <div key={c}>
+                <label className="text-xs text-slate-500 block mb-1">1 {c} =</label>
+                <div className="flex items-center gap-1">
+                  <input
+                    type="number" value={fxDraft[c]} min="0" step="0.0001"
+                    onChange={e => setFxDraft(prev => ({ ...prev, [c]: e.target.value }))}
+                    onKeyDown={e => e.key === 'Enter' && saveFX()}
+                    className="w-full bg-slate-800 border border-slate-700 rounded-lg px-2 py-1.5 text-xs text-white outline-none focus:border-blue-500 text-right"
+                  />
+                  <span className="text-xs text-slate-500 shrink-0">SGD</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="flex gap-4 flex-wrap">
+            {FX_CURRENCIES.map(c => (
+              <span key={c} className="text-xs text-slate-300">
+                <span className="font-mono font-semibold text-purple-400">{c}</span>
+                <span className="text-slate-500"> = </span>
+                {formatCurrency(rates[c] ?? 1)}
+              </span>
+            ))}
+          </div>
+        )}
+      </div>
+
       {/* Portfolio summary */}
       <div className="bg-gradient-to-br from-purple-700 to-purple-900 rounded-2xl p-6">
-        <p className="text-purple-200 text-sm font-medium">Portfolio Value</p>
-        <p className="text-4xl font-bold mt-1">{formatCurrency(totalValue)}</p>
+        <p className="text-purple-200 text-sm font-medium">Portfolio Value (SGD)</p>
+        <p className="text-4xl font-bold mt-1">{formatCurrency(totalValueSGD)}</p>
         <div className="flex items-center gap-2 mt-2">
-          {totalGainLoss >= 0 ? <TrendingUp size={16} className="text-green-300" /> : <TrendingDown size={16} className="text-red-300" />}
-          <span className={`text-sm font-semibold ${totalGainLoss >= 0 ? 'text-green-300' : 'text-red-300'}`}>
-            {totalGainLoss >= 0 ? '+' : ''}{formatCurrency(totalGainLoss)} ({formatPercent(totalGainLossPct)})
+          {totalGainLossSGD >= 0 ? <TrendingUp size={16} className="text-green-300" /> : <TrendingDown size={16} className="text-red-300" />}
+          <span className={`text-sm font-semibold ${totalGainLossSGD >= 0 ? 'text-green-300' : 'text-red-300'}`}>
+            {totalGainLossSGD >= 0 ? '+' : ''}{formatCurrency(totalGainLossSGD)} ({formatPercent(totalGainLossPct)})
           </span>
-          <span className="text-purple-300 text-xs">vs cost {formatCurrency(totalCost)}</span>
+          <span className="text-purple-300 text-xs">vs cost {formatCurrency(totalCostSGD)}</span>
         </div>
         <button onClick={() => setShowFund(true)} className="mt-4 text-sm font-semibold bg-white/10 hover:bg-white/20 px-4 py-1.5 rounded-lg transition-colors">
           Fund from account
@@ -120,13 +181,16 @@ export default function InvestmentsPage() {
                     </div>
                     {group.name && <p className="text-xs text-slate-500 truncate">{group.name}</p>}
                     <p className="text-xs text-slate-500">
-                      {group.totalShares} shares · avg cost {formatCurrency(group.weightedAvgCost)}
+                      {group.totalShares} shares · avg {formatWithCurrency(group.weightedAvgCost, group.currency)}
                     </p>
                   </div>
                   <div className="text-right shrink-0">
-                    <p className="font-bold text-sm">{formatCurrency(group.totalValue)}</p>
+                    <p className="font-bold text-sm">{formatWithCurrency(group.totalValue, group.currency)}</p>
+                    {group.currency !== 'SGD' && (
+                      <p className="text-xs text-slate-500">≈ {formatCurrency(group.totalValueSGD)}</p>
+                    )}
                     <p className={`text-xs font-semibold ${group.gainLoss >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                      {group.gainLoss >= 0 ? '+' : ''}{formatCurrency(group.gainLoss)} ({formatPercent(group.gainLossPct)})
+                      {group.gainLoss >= 0 ? '+' : ''}{formatWithCurrency(group.gainLoss, group.currency)} ({formatPercent(group.gainLossPct)})
                     </p>
                   </div>
                   {multipleLots && (
@@ -153,7 +217,7 @@ export default function InvestmentsPage() {
                           <div className="flex-1 min-w-0">
                             <div className="flex items-center gap-2">
                               <span className="text-xs text-slate-300">
-                                {inv.shares} shares @ {formatCurrency(inv.purchasePrice)}
+                                {inv.shares} @ {formatWithCurrency(inv.purchasePrice, inv.currency)}
                               </span>
                               {inv.broker && (
                                 <span className="text-xs bg-slate-700 text-slate-400 px-1.5 py-0.5 rounded">
@@ -164,7 +228,10 @@ export default function InvestmentsPage() {
                             <p className="text-xs text-slate-500">Bought {formatDate(inv.purchaseDate, { day: 'numeric', month: 'short', year: 'numeric' })}</p>
                           </div>
                           <div className="text-right shrink-0">
-                            <p className="text-xs font-semibold">{formatCurrency(value)}</p>
+                            <p className="text-xs font-semibold">{formatWithCurrency(value, inv.currency)}</p>
+                            {inv.currency !== 'SGD' && (
+                              <p className="text-xs text-slate-500">≈ {formatCurrency(toSGD(value, inv.currency))}</p>
+                            )}
                             <p className={`text-xs ${gl >= 0 ? 'text-green-400' : 'text-red-400'}`}>
                               {gl >= 0 ? '+' : ''}{formatPercent(glPct)}
                             </p>
@@ -238,21 +305,21 @@ function AddInvestmentModal({ existingGroups, onClose, onSave }: {
   const [currentPrice, setCurrentPrice] = useState('')
   const [purchaseDate, setPurchaseDate] = useState(new Date().toISOString().split('T')[0])
   const [broker, setBroker]             = useState('')
-  const [currency, setCurrency]         = useState('SGD')
+  const [currency, setCurrency]         = useState('USD')
   const [notes, setNotes]               = useState('')
 
   const selectExisting = (g: TickerGroup) => {
     setPinnedTicker(g)
     setTicker(g.ticker)
     setName(g.name)
-    setCurrency(g.lots[0]?.currency ?? 'SGD')
+    setCurrency(g.lots[0]?.currency ?? 'USD')
     setCurrentPrice(String(g.lots[0]?.currentPrice ?? ''))
     setBroker(g.lots[0]?.broker ?? '')
   }
 
   const clearExisting = () => {
     setPinnedTicker(null)
-    setTicker(''); setName(''); setCurrentPrice(''); setBroker(''); setCurrency('SGD')
+    setTicker(''); setName(''); setCurrentPrice(''); setBroker(''); setCurrency('USD')
   }
 
   const cost  = (Number(shares) || 0) * (Number(purchasePrice) || 0)
@@ -370,11 +437,11 @@ function AddInvestmentModal({ existingGroups, onClose, onSave }: {
           {/* Live P/L summary */}
           {shares && purchasePrice && currentPrice && (
             <div className="bg-slate-800 rounded-xl p-3 text-sm">
-              <div className="flex justify-between"><span className="text-slate-400">Cost</span><span>{formatCurrency(cost)}</span></div>
-              <div className="flex justify-between mt-1"><span className="text-slate-400">Value</span><span className="font-semibold">{formatCurrency(value)}</span></div>
+              <div className="flex justify-between"><span className="text-slate-400">Cost</span><span>{formatWithCurrency(cost, currency)}</span></div>
+              <div className="flex justify-between mt-1"><span className="text-slate-400">Value</span><span className="font-semibold">{formatWithCurrency(value, currency)}</span></div>
               <div className="flex justify-between mt-1"><span className="text-slate-400">G/L</span>
                 <span className={`font-semibold ${value - cost >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                  {value - cost >= 0 ? '+' : ''}{formatCurrency(value - cost)}
+                  {value - cost >= 0 ? '+' : ''}{formatWithCurrency(value - cost, currency)}
                 </span>
               </div>
             </div>
@@ -433,14 +500,14 @@ function EditInvestmentModal({ investment, accounts, onClose, onUpdate, onDelete
             <>
               <div className="bg-slate-800 rounded-xl p-4 space-y-2 text-sm">
                 <div className="flex justify-between"><span className="text-slate-400">Shares</span><span>{investment.shares}</span></div>
-                <div className="flex justify-between"><span className="text-slate-400">Avg cost</span><span>{formatCurrency(investment.purchasePrice)}</span></div>
-                <div className="flex justify-between"><span className="text-slate-400">Current price</span><span className="font-semibold">{formatCurrency(investment.currentPrice)}</span></div>
+                <div className="flex justify-between"><span className="text-slate-400">Cost / share</span><span>{formatWithCurrency(investment.purchasePrice, investment.currency)}</span></div>
+                <div className="flex justify-between"><span className="text-slate-400">Current price</span><span className="font-semibold">{formatWithCurrency(investment.currentPrice, investment.currency)}</span></div>
                 <div className="flex justify-between"><span className="text-slate-400">Broker</span><span>{investment.broker || '—'}</span></div>
                 <div className="flex justify-between"><span className="text-slate-400">Bought</span><span>{formatDate(investment.purchaseDate, { day: 'numeric', month: 'short', year: 'numeric' })}</span></div>
                 <div className="flex justify-between border-t border-slate-700 pt-2">
                   <span className="text-slate-400">P/L</span>
                   <span className={`font-bold ${gl >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                    {gl >= 0 ? '+' : ''}{formatCurrency(gl)} ({formatPercent(cost > 0 ? (gl / cost) * 100 : 0)})
+                    {gl >= 0 ? '+' : ''}{formatWithCurrency(gl, investment.currency)} ({formatPercent(cost > 0 ? (gl / cost) * 100 : 0)})
                   </span>
                 </div>
               </div>
@@ -455,7 +522,7 @@ function EditInvestmentModal({ investment, accounts, onClose, onUpdate, onDelete
             <>
               <div className="bg-slate-800 rounded-xl p-4">
                 <p className="font-semibold text-sm mb-1">Delete {investment.ticker} lot</p>
-                <p className="text-xs text-slate-400">{investment.shares} shares · current value {formatCurrency(value)}</p>
+                <p className="text-xs text-slate-400">{investment.shares} shares · current value {formatWithCurrency(value, investment.currency)}</p>
               </div>
 
               {/* Option toggle */}
@@ -595,7 +662,10 @@ function UpdatePricesModal({ groups, onClose, onSave }: {
                   <span className="text-xs font-bold text-purple-400">{g.ticker.slice(0, 4)}</span>
                 </div>
                 <div className="flex-1 min-w-0">
-                  <p className="text-xs font-semibold">{g.ticker}</p>
+                  <div className="flex items-center gap-2">
+                    <p className="text-xs font-semibold">{g.ticker}</p>
+                    <span className="text-xs text-purple-400 font-mono">{g.currency}</span>
+                  </div>
                   <p className="text-xs text-slate-500">
                     {g.lots.length} {g.lots.length === 1 ? 'lot' : 'lots'} · {g.totalShares} shares
                   </p>

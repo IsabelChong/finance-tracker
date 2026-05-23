@@ -64,7 +64,7 @@ export default function DashboardPage() {
 
   const { accounts, allocatedForAccount, bucketsForAccount, addTransaction } = useAccounts()
   const { transactions } = useTransactions()
-  const { totalValue, totalCost, totalGainLoss, totalGainLossPct, investments } = useInvestments()
+  const { totalValueSGD, totalCostSGD, totalGainLossSGD, totalGainLossPct, investments } = useInvestments()
   const { expenseCategories, incomeCategories } = useCategories()
   const { totalCPF } = useCPF()
 
@@ -72,7 +72,7 @@ export default function DashboardPage() {
 
   const totalAssets      = accounts.filter(a => a.type !== 'credit').reduce((s, a) => s + a.balance, 0)
   const totalLiabilities = accounts.filter(a => a.type === 'credit').reduce((s, a) => s + a.balance, 0)
-  const netWorth         = totalAssets - totalLiabilities + totalValue + totalCPF
+  const netWorth         = totalAssets - totalLiabilities + totalValueSGD + totalCPF
 
   const isCurrentMonth = isSameMonthYear(month, new Date())
 
@@ -95,7 +95,7 @@ export default function DashboardPage() {
         <p className="text-4xl font-bold mt-1">{formatCurrency(netWorth)}</p>
         <div className="flex gap-5 mt-4 flex-wrap">
           <Stat label="Cash" value={formatCurrency(totalAssets)} color="text-green-300" />
-          <Stat label="Invested" value={formatCurrency(totalValue)} color="text-purple-300" />
+          <Stat label="Invested" value={formatCurrency(totalValueSGD)} color="text-purple-300" />
           {totalCPF > 0 && <Stat label="CPF" value={formatCurrency(totalCPF)} color="text-yellow-300" />}
           {totalLiabilities > 0 && <Stat label="Debt" value={formatCurrency(totalLiabilities)} color="text-red-300" />}
         </div>
@@ -139,8 +139,8 @@ export default function DashboardPage() {
           transactions={transactions}
           accounts={accounts}
           investments={investments}
-          totalValue={totalValue} totalCost={totalCost}
-          totalGainLoss={totalGainLoss} totalGainLossPct={totalGainLossPct}
+          totalValue={totalValueSGD} totalCost={totalCostSGD}
+          totalGainLoss={totalGainLossSGD} totalGainLossPct={totalGainLossPct}
           totalAssets={totalAssets} totalLiabilities={totalLiabilities} netWorth={netWorth}
           totalCPF={totalCPF}
           income={income} expenses={expenses}

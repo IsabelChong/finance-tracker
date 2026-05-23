@@ -3,7 +3,7 @@ import { Timestamp } from 'firebase/firestore'
 export interface Account {
   id: string
   name: string
-  type: 'savings' | 'checking' | 'credit'
+  type: 'savings' | 'cash' | 'credit'
   institution: string
   balance: number
   currency: string
@@ -119,4 +119,5 @@ export const DEFAULT_EXPENSE_CATEGORIES: Omit<Category, 'id'>[] = [
 export const DEFAULT_INCOME_CATEGORIES: Omit<Category, 'id'>[] = [
   { name: 'Salary',    icon: '💼', colorHex: '#22C55E', type: 'income', sortOrder: 16, isDefault: true },
   { name: 'Freelance', icon: '🧑‍💻', colorHex: '#10B981', type: 'income', sortOrder: 17, isDefault: true },
+  { name: 'Cashback',  icon: '💳', colorHex: '#F59E0B', type: 'income', sortOrder: 18, isDefault: true },
 ]

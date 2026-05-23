@@ -43,6 +43,14 @@ export function monthLabel(date: Date): string {
   return date.toLocaleDateString('en-SG', { month: 'long', year: 'numeric' })
 }
 
+export function formatWithCurrency(amount: number, currency: string): string {
+  const num = new Intl.NumberFormat('en-SG', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(amount)
+  return `${currency} $${num}`
+}
+
 export function cn(...classes: (string | undefined | false | null)[]): string {
   return classes.filter(Boolean).join(' ')
 }

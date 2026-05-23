@@ -3,9 +3,11 @@ import { collection, onSnapshot, addDoc, updateDoc, deleteDoc, doc, serverTimest
 import { db, investmentsCol } from '../lib/firebase'
 import { Investment } from '../types'
 import { useAuth } from '../contexts/AuthContext'
+import { useFXRates } from '../contexts/FXRatesContext'
 
 export function useInvestments() {
   const { user } = useAuth()
+  const { toSGD } = useFXRates()
   const [investments, setInvestments] = useState<Investment[]>([])
   const [loading, setLoading] = useState(true)
 
@@ -45,10 +47,10 @@ export function useInvestments() {
     await batch.commit()
   }
 
-  const totalCost = investments.reduce((s, i) => s + i.shares * i.purchasePrice, 0)
-  const totalValue = investments.reduce((s, i) => s + i.shares * i.currentPrice, 0)
-  const totalGainLoss = totalValue - totalCost
-  const totalGainLossPct = totalCost > 0 ? (totalGainLoss / totalCost) * 100 : 0
+  const totalCostSGD  = investments.reduce((s, i) => s + toSGD(i.shares * i.purchasePrice, i.currency), 0)
+  const totalValueSGD = investments.reduce((s, i) => s + toSGD(i.shares * i.currentPrice,  i.currency), 0)
+  const totalGainLossSGD = totalValueSGD - totalCostSGD
+  const totalGainLossPct = totalCostSGD > 0 ? (totalGainLossSGD / totalCostSGD) * 100 : 0
 
-  return { investments, loading, addInvestment, updateInvestment, deleteInvestment, updatePricesByTicker, totalCost, totalValue, totalGainLoss, totalGainLossPct }
+  return { investments, loading, addInvestment, updateInvestment, deleteInvestment, updatePricesByTicker, totalCostSGD, totalValueSGD, totalGainLossSGD, totalGainLossPct }
 }
