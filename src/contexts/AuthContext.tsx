@@ -29,8 +29,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, async (u) => {
       setUser(u)
-      if (u) await seedCategories(u.uid)
-      setLoading(false)
+      try {
+        if (u) await seedCategories(u.uid)
+      } catch (e) {
+        console.error('seedCategories failed:', e)
+      } finally {
+        setLoading(false)
+      }
     })
     return unsub
   }, [])

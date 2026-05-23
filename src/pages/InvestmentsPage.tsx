@@ -1,10 +1,40 @@
 import { useState } from 'react'
-import { Plus, X, RefreshCw, TrendingUp, TrendingDown } from 'lucide-react'
+import { Plus, X, RefreshCw, TrendingUp, TrendingDown, ChevronDown, ChevronRight } from 'lucide-react'
 import { useInvestments } from '../hooks/useInvestments'
 import { useAccounts } from '../hooks/useAccounts'
 import { formatCurrency, formatPercent, formatDate } from '../lib/utils'
 import { Investment } from '../types'
 import { Timestamp } from 'firebase/firestore'
+
+interface TickerGroup {
+  ticker: string
+  name: string
+  lots: Investment[]
+  totalShares: number
+  totalCost: number
+  totalValue: number
+  weightedAvgCost: number
+  gainLoss: number
+  gainLossPct: number
+}
+
+function groupByTicker(investments: Investment[]): TickerGroup[] {
+  const map: Record<string, Investment[]> = {}
+  for (const inv of investments) {
+    if (!map[inv.ticker]) map[inv.ticker] = []
+    map[inv.ticker].push(inv)
+  }
+  return Object.entries(map).map(([ticker, lots]) => {
+    const totalShares = lots.reduce((s, l) => s + l.shares, 0)
+    const totalCost = lots.reduce((s, l) => s + l.shares * l.purchasePrice, 0)
+    const totalValue = lots.reduce((s, l) => s + l.shares * l.currentPrice, 0)
+    const weightedAvgCost = totalShares > 0 ? totalCost / totalShares : 0
+    const gainLoss = totalValue - totalCost
+    const gainLossPct = totalCost > 0 ? (gainLoss / totalCost) * 100 : 0
+    const name = lots.find(l => l.name)?.name ?? ''
+    return { ticker, name, lots, totalShares, totalCost, totalValue, weightedAvgCost, gainLoss, gainLossPct }
+  })
+}
 
 export default function InvestmentsPage() {
   const { investments, addInvestment, updateInvestment, deleteInvestment, totalCost, totalValue, totalGainLoss, totalGainLossPct } = useInvestments()
@@ -12,6 +42,17 @@ export default function InvestmentsPage() {
   const [showAdd, setShowAdd] = useState(false)
   const [selected, setSelected] = useState<Investment | null>(null)
   const [showFund, setShowFund] = useState(false)
+  const [expandedTickers, setExpandedTickers] = useState<Set<string>>(new Set())
+
+  const groups = groupByTicker(investments)
+
+  const toggleTicker = (ticker: string) => {
+    setExpandedTickers(prev => {
+      const next = new Set(prev)
+      next.has(ticker) ? next.delete(ticker) : next.add(ticker)
+      return next
+    })
+  }
 
   return (
     <div className="p-4 lg:p-6 space-y-5 max-w-3xl mx-auto">
@@ -38,38 +79,92 @@ export default function InvestmentsPage() {
         </button>
       </div>
 
-      {/* Holdings */}
-      {investments.length === 0 ? (
+      {/* Holdings grouped by ticker */}
+      {groups.length === 0 ? (
         <div className="bg-slate-900 border border-slate-800 rounded-xl p-10 text-center text-slate-500">
           No investments yet. Add your first holding.
         </div>
       ) : (
-        <div className="bg-slate-900 border border-slate-800 rounded-xl divide-y divide-slate-800">
-          {investments.map(inv => {
-            const cost = inv.shares * inv.purchasePrice
-            const value = inv.shares * inv.currentPrice
-            const gl = value - cost
-            const glPct = cost > 0 ? (gl / cost) * 100 : 0
+        <div className="space-y-2">
+          {groups.map(group => {
+            const expanded = expandedTickers.has(group.ticker)
+            const multipleLots = group.lots.length > 1
             return (
-              <button key={inv.id} onClick={() => setSelected(inv)} className="flex items-center gap-4 px-4 py-4 w-full text-left hover:bg-slate-800/50 transition-colors">
-                <div className="w-10 h-10 bg-slate-800 rounded-xl flex items-center justify-center shrink-0">
-                  <span className="text-xs font-bold text-purple-400">{inv.ticker.slice(0, 4)}</span>
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm font-semibold">{inv.ticker}</span>
-                    {inv.broker && <span className="text-xs bg-slate-800 text-slate-400 px-2 py-0.5 rounded-full">{inv.broker}</span>}
+              <div key={group.ticker} className="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden">
+                {/* Ticker summary row */}
+                <button
+                  onClick={() => multipleLots ? toggleTicker(group.ticker) : setSelected(group.lots[0])}
+                  className="flex items-center gap-4 px-4 py-4 w-full text-left hover:bg-slate-800/50 transition-colors"
+                >
+                  <div className="w-10 h-10 bg-slate-800 rounded-xl flex items-center justify-center shrink-0">
+                    <span className="text-xs font-bold text-purple-400">{group.ticker.slice(0, 4)}</span>
                   </div>
-                  <p className="text-xs text-slate-500 truncate">{inv.name || 'No name'}</p>
-                  <p className="text-xs text-slate-500">{inv.shares} shares · avg {formatCurrency(inv.purchasePrice)} · now {formatCurrency(inv.currentPrice)}</p>
-                </div>
-                <div className="text-right shrink-0">
-                  <p className="font-bold text-sm">{formatCurrency(value)}</p>
-                  <p className={`text-xs font-semibold ${gl >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                    {gl >= 0 ? '+' : ''}{formatCurrency(gl)} ({formatPercent(glPct)})
-                  </p>
-                </div>
-              </button>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-semibold">{group.ticker}</span>
+                      {multipleLots && (
+                        <span className="text-xs bg-slate-700 text-slate-300 px-2 py-0.5 rounded-full">
+                          {group.lots.length} lots
+                        </span>
+                      )}
+                    </div>
+                    {group.name && <p className="text-xs text-slate-500 truncate">{group.name}</p>}
+                    <p className="text-xs text-slate-500">
+                      {group.totalShares} shares · avg cost {formatCurrency(group.weightedAvgCost)}
+                    </p>
+                  </div>
+                  <div className="text-right shrink-0">
+                    <p className="font-bold text-sm">{formatCurrency(group.totalValue)}</p>
+                    <p className={`text-xs font-semibold ${group.gainLoss >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                      {group.gainLoss >= 0 ? '+' : ''}{formatCurrency(group.gainLoss)} ({formatPercent(group.gainLossPct)})
+                    </p>
+                  </div>
+                  {multipleLots && (
+                    <div className="ml-1 text-slate-500">
+                      {expanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+                    </div>
+                  )}
+                </button>
+
+                {/* Individual lots (expanded) */}
+                {multipleLots && expanded && (
+                  <div className="border-t border-slate-800 divide-y divide-slate-800/50">
+                    {group.lots.map(inv => {
+                      const cost = inv.shares * inv.purchasePrice
+                      const value = inv.shares * inv.currentPrice
+                      const gl = value - cost
+                      const glPct = cost > 0 ? (gl / cost) * 100 : 0
+                      return (
+                        <button
+                          key={inv.id}
+                          onClick={() => setSelected(inv)}
+                          className="flex items-center gap-3 pl-14 pr-4 py-3 w-full text-left hover:bg-slate-800/30 transition-colors"
+                        >
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2">
+                              <span className="text-xs text-slate-300">
+                                {inv.shares} shares @ {formatCurrency(inv.purchasePrice)}
+                              </span>
+                              {inv.broker && (
+                                <span className="text-xs bg-slate-700 text-slate-400 px-1.5 py-0.5 rounded">
+                                  {inv.broker}
+                                </span>
+                              )}
+                            </div>
+                            <p className="text-xs text-slate-500">Bought {formatDate(inv.purchaseDate, { day: 'numeric', month: 'short', year: 'numeric' })}</p>
+                          </div>
+                          <div className="text-right shrink-0">
+                            <p className="text-xs font-semibold">{formatCurrency(value)}</p>
+                            <p className={`text-xs ${gl >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                              {gl >= 0 ? '+' : ''}{formatPercent(glPct)}
+                            </p>
+                          </div>
+                        </button>
+                      )
+                    })}
+                  </div>
+                )}
+              </div>
             )
           })}
         </div>
@@ -84,6 +179,7 @@ export default function InvestmentsPage() {
     </div>
   )
 }
+
 
 function AddInvestmentModal({ onClose, onSave }: { onClose: () => void; onSave: (d: any) => void }) {
   const [ticker, setTicker] = useState('')

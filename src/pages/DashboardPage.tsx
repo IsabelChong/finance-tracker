@@ -90,7 +90,7 @@ export default function DashboardPage() {
                 <div key={acc.id} className="shrink-0 w-44 bg-slate-900 border border-slate-800 rounded-xl p-4">
                   <div className="flex items-center gap-2 mb-2">
                     <span className="w-3 h-3 rounded-full" style={{ background: acc.colorHex }} />
-                    <span className="text-xs text-slate-400">{acc.type}</span>
+                    <span className="text-xs text-slate-400 capitalize">{acc.type === 'credit' ? 'Credit Card' : acc.type}</span>
                   </div>
                   <p className="text-sm font-semibold truncate">{acc.name}</p>
                   <p className={`text-xl font-bold mt-1 ${acc.type === 'credit' ? 'text-red-400' : ''}`}>
