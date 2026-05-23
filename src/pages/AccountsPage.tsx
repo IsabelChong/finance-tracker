@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Plus, X, ChevronRight, Shield, Star } from 'lucide-react'
+import { Plus, X, ChevronRight, Shield, Star, Pencil } from 'lucide-react'
 import { useAccounts } from '../hooks/useAccounts'
 import { useWants } from '../hooks/useWants'
 import { useTransactions } from '../hooks/useTransactions'
@@ -155,8 +155,8 @@ function AccountDetailModal({ account, buckets, transactions, wants, onClose, on
             <p className="text-xs text-slate-400 mb-1">{account.type === 'credit' ? 'Amount Owed' : 'Balance'}</p>
             <p className={`text-4xl font-bold ${account.type === 'credit' ? 'text-red-400' : ''}`}>{formatCurrency(account.balance)}</p>
             {!showReconcile && (
-              <button onClick={() => setShowReconcile(true)} className="text-xs text-slate-500 hover:text-blue-400 mt-2 transition-colors">
-                Reconcile balance
+              <button onClick={() => setShowReconcile(true)} className="inline-flex items-center gap-1.5 text-xs font-medium text-slate-400 hover:text-blue-400 mt-3 px-3 py-1.5 bg-slate-800 hover:bg-slate-700 rounded-lg transition-colors">
+                <Pencil size={11} /> Reconcile balance
               </button>
             )}
             {showReconcile && (
