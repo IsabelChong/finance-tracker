@@ -494,7 +494,8 @@ function AllTimeTab({ transactions, accounts, investments, totalValue, totalCost
   const allSaved    = allIncome - allExpenses
   const savingsRate = allIncome > 0 ? Math.min(100, (allSaved / allIncome) * 100) : 0
 
-  const bankAccounts   = accounts.filter(a => a.type !== 'credit')
+  const bankAccounts   = accounts.filter(a => a.type === 'savings' || a.type === 'cash')
+  const brokerAccounts = accounts.filter(a => a.type === 'investment')
   const creditAccounts = accounts.filter(a => a.type === 'credit')
 
   const netWorthPie = [
@@ -583,6 +584,27 @@ function AllTimeTab({ transactions, accounts, investments, totalValue, totalCost
               </div>
             )
           })}
+        </div>
+      )}
+
+      {/* Broker accounts */}
+      {brokerAccounts.length > 0 && (
+        <div className="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden">
+          <div className="px-4 py-3 border-b border-slate-800">
+            <h3 className="text-sm font-semibold text-slate-300">Broker Accounts</h3>
+          </div>
+          {brokerAccounts.map((acc: any) => (
+            <div key={acc.id} className="flex items-center justify-between px-4 py-3 border-b border-slate-800 last:border-0">
+              <div className="flex items-center gap-2">
+                <span className="w-3 h-3 rounded-full shrink-0" style={{ background: acc.colorHex }} />
+                <div>
+                  <p className="text-sm font-semibold">{acc.name}</p>
+                  <p className="text-xs text-slate-500">{acc.institution || 'Broker'}</p>
+                </div>
+              </div>
+              <p className="font-bold">{formatCurrency(acc.balance)}</p>
+            </div>
+          ))}
         </div>
       )}
 

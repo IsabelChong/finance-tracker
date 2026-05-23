@@ -3,7 +3,7 @@ import { Timestamp } from 'firebase/firestore'
 export interface Account {
   id: string
   name: string
-  type: 'savings' | 'cash' | 'credit'
+  type: 'savings' | 'cash' | 'investment' | 'credit'
   institution: string
   balance: number
   currency: string

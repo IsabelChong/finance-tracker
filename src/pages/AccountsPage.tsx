@@ -11,7 +11,7 @@ type Modal = null | 'addAccount' | { type: 'accountDetail'; accountId: string } 
 
 const COLORS = ['#3b82f6','#22c55e','#ef4444','#f59e0b','#8b5cf6','#ec4899','#14b8a6','#f97316']
 
-interface DragState { section: 'bank' | 'credit'; from: number; over: number }
+interface DragState { section: 'bank' | 'broker' | 'credit'; from: number; over: number }
 
 export default function AccountsPage() {
   const { accounts, buckets, addAccount, updateAccount, deleteAccount, reorderAccounts, addBucket, updateBucket, deleteBucket, reorderBuckets, addTransaction, bucketsForAccount, allocatedForAccount } = useAccounts()
@@ -21,21 +21,22 @@ export default function AccountsPage() {
   const [reorderMode, setReorderMode] = useState(false)
   const [dragState, setDragState] = useState<DragState | null>(null)
 
-  const bankAccounts = accounts.filter(a => a.type !== 'credit')
+  const bankAccounts   = accounts.filter(a => a.type === 'savings' || a.type === 'cash')
+  const brokerAccounts = accounts.filter(a => a.type === 'investment')
   const creditAccounts = accounts.filter(a => a.type === 'credit')
-  const totalSavings = bankAccounts.reduce((s, a) => s + a.balance, 0)
-  const totalDebt = creditAccounts.reduce((s, a) => s + a.balance, 0)
+  const totalSavings = accounts.filter(a => a.type !== 'credit').reduce((s, a) => s + a.balance, 0)
+  const totalDebt    = creditAccounts.reduce((s, a) => s + a.balance, 0)
 
-  const handleDrop = (section: 'bank' | 'credit', toIdx: number) => {
+  const handleDrop = (section: 'bank' | 'broker' | 'credit', toIdx: number) => {
     if (!dragState || dragState.section !== section || dragState.from === toIdx) { setDragState(null); return }
-    const items = section === 'bank' ? [...bankAccounts] : [...creditAccounts]
+    const items = section === 'bank' ? [...bankAccounts] : section === 'broker' ? [...brokerAccounts] : [...creditAccounts]
     const [moved] = items.splice(dragState.from, 1)
     items.splice(toIdx, 0, moved)
     reorderAccounts(items.map(a => a.id))
     setDragState(null)
   }
 
-  const dragProps = (section: 'bank' | 'credit', idx: number) => reorderMode ? {
+  const dragProps = (section: 'bank' | 'broker' | 'credit', idx: number) => reorderMode ? {
     draggable: true,
     onDragStart: () => setDragState({ section, from: idx, over: idx }),
     onDragOver: (e: React.DragEvent) => { e.preventDefault(); setDragState(d => d ? { ...d, over: idx } : null) },
@@ -43,10 +44,10 @@ export default function AccountsPage() {
     onDragEnd: () => setDragState(null),
   } : {}
 
-  const isDragOver = (section: 'bank' | 'credit', idx: number) =>
+  const isDragOver = (section: 'bank' | 'broker' | 'credit', idx: number) =>
     reorderMode && dragState?.section === section && dragState.over === idx && dragState.from !== idx
 
-  const isDragging = (section: 'bank' | 'credit', idx: number) =>
+  const isDragging = (section: 'bank' | 'broker' | 'credit', idx: number) =>
     reorderMode && dragState?.section === section && dragState.from === idx
 
   return (
@@ -104,6 +105,28 @@ export default function AccountsPage() {
         </Section>
       )}
 
+      {brokerAccounts.length > 0 && (
+        <Section title="Broker Accounts">
+          {brokerAccounts.map((acc, i) => (
+            <div
+              key={acc.id}
+              {...dragProps('broker', i)}
+              className={[
+                isDragOver('broker', i) ? 'border-t-2 border-blue-500' : '',
+                isDragging('broker', i) ? 'opacity-40' : '',
+              ].join(' ')}
+            >
+              <AccountRow
+                account={acc}
+                allocated={allocatedForAccount(acc.id)}
+                onClick={() => !reorderMode && setModal({ type: 'accountDetail', accountId: acc.id })}
+                reorderMode={reorderMode}
+              />
+            </div>
+          ))}
+        </Section>
+      )}
+
       {creditAccounts.length > 0 && (
         <Section title="Credit Cards">
           {creditAccounts.map((acc, i) => (
@@ -134,7 +157,7 @@ export default function AccountsPage() {
 
       {/* Modals */}
       {modal === 'addAccount' && (
-        <AddAccountModal onClose={() => setModal(null)} onSave={async (data) => { await addAccount(data); setModal(null) }} />
+        <AddAccountModal onClose={() => setModal(null)} onSave={(data) => { setModal(null); addAccount(data) }} />
       )}
       {modal && typeof modal === 'object' && modal.type === 'accountDetail' && (() => {
         const liveAccount = accounts.find(a => a.id === modal.accountId)
@@ -151,7 +174,7 @@ export default function AccountsPage() {
             onDeleteBucket={deleteBucket}
             onReorderBuckets={reorderBuckets}
             onReconcile={(id, bal) => updateAccount(id, { balance: bal })}
-            onDelete={async (id) => { await deleteAccount(id); setModal(null) }}
+            onDelete={(id) => { setModal(null); deleteAccount(id) }}
             onLogSpending={async (amount, date, payee) => {
               await addTransaction({
                 date, amount, type: 'expense',
@@ -171,10 +194,10 @@ export default function AccountsPage() {
             account={liveAccount}
             wants={wants.filter(w => !w.bucketId)}
             onClose={() => setModal(null)}
-            onSave={async (data, wantId) => {
-              const ref = await addBucket(data)
-              if (ref && wantId) await updateWant(wantId, { bucketId: ref.id })
+            onSave={(data, wantId) => {
               setModal(null)
+              if (wantId) addBucket(data).then(ref => ref && updateWant(wantId, { bucketId: ref.id }))
+              else addBucket(data)
             }}
           />
         )
@@ -206,7 +229,7 @@ function AccountRow({ account, allocated, onClick, reorderMode }: {
         ? <GripVertical size={16} className="text-slate-500 shrink-0" />
         : null}
       <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0" style={{ background: account.colorHex + '22' }}>
-        <span className="text-xl">{account.type === 'credit' ? '💳' : '🏦'}</span>
+        <span className="text-xl">{account.type === 'credit' ? '💳' : account.type === 'investment' ? '📊' : '🏦'}</span>
       </div>
       <div className="flex-1 min-w-0">
         <p className="text-sm font-semibold">{account.name}</p>
@@ -524,7 +547,7 @@ function BucketAmountEditor({ bucket, onUpdate }: { bucket: AccountBucket; onUpd
 
 function AddAccountModal({ onClose, onSave }: { onClose: () => void; onSave: (data: any) => void }) {
   const [name, setName] = useState('')
-  const [type, setType] = useState<'savings' | 'cash' | 'credit'>('savings')
+  const [type, setType] = useState<'savings' | 'cash' | 'investment' | 'credit'>('savings')
   const [institution, setInstitution] = useState('')
   const [balance, setBalance] = useState('')
   const [colorHex, setColorHex] = useState('#3b82f6')
@@ -549,18 +572,18 @@ function AddAccountModal({ onClose, onSave }: { onClose: () => void; onSave: (da
           </div>
           <div>
             <label className="text-xs text-slate-400 font-medium block mb-1.5">Type</label>
-            <div className="flex gap-2">
-              {(['savings', 'cash', 'credit'] as const).map(t => (
+            <div className="grid grid-cols-2 gap-2">
+              {([['savings', '🏦 Savings'], ['cash', '💵 Cash'], ['investment', '📊 Broker'], ['credit', '💳 Credit']] as const).map(([t, label]) => (
                 <button key={t} onClick={() => setType(t)}
-                  className={`flex-1 py-2 rounded-xl text-sm font-medium capitalize transition-colors ${type === t ? 'bg-blue-600 text-white' : 'bg-slate-800 text-slate-400 hover:text-white'}`}>
-                  {t}
+                  className={`py-2 rounded-xl text-sm font-medium transition-colors ${type === t ? 'bg-blue-600 text-white' : 'bg-slate-800 text-slate-400 hover:text-white'}`}>
+                  {label}
                 </button>
               ))}
             </div>
           </div>
           <div>
             <label className="text-xs text-slate-400 font-medium block mb-1.5">
-              {type === 'credit' ? 'Current balance owed (SGD)' : 'Opening balance (SGD)'}
+              {type === 'credit' ? 'Current balance owed (SGD)' : type === 'investment' ? 'Idle cash balance (SGD)' : 'Opening balance (SGD)'}
             </label>
             <input value={balance} onChange={e => setBalance(e.target.value)} type="number" placeholder="0.00"
               className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2.5 text-sm text-white outline-none focus:border-blue-500 placeholder-slate-600" />
