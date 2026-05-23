@@ -605,35 +605,63 @@ function AllTimeTab({ transactions, accounts, investments, totalValue, totalCost
         </div>
       )}
 
-      {/* Investment portfolio */}
-      {investments.length > 0 && (
-        <div className="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden">
-          <div className="px-4 py-3 border-b border-slate-800 flex items-center justify-between">
-            <h3 className="text-sm font-semibold text-slate-300">Investments</h3>
-            <span className={`text-xs font-semibold ${totalGainLoss >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-              {totalGainLoss >= 0 ? '+' : ''}{formatCurrency(totalGainLoss)} ({totalGainLossPct >= 0 ? '+' : ''}{totalGainLossPct.toFixed(1)}%)
-            </span>
-          </div>
-          {investments.map((inv: any) => (
-            <div key={inv.id} className="flex items-center justify-between px-4 py-3 border-b border-slate-800 last:border-0">
-              <div>
-                <p className="text-sm font-semibold">{inv.ticker}</p>
-                <p className="text-xs text-slate-500">{inv.shares} shares</p>
-              </div>
-              <div className="text-right">
-                <p className="text-sm font-bold">{formatCurrency(inv.shares * inv.currentPrice)}</p>
-                <p className={`text-xs ${(inv.currentPrice - inv.purchasePrice) >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                  {((inv.currentPrice - inv.purchasePrice) / inv.purchasePrice * 100).toFixed(1)}%
-                </p>
-              </div>
+      {/* Investment portfolio — grouped by ticker */}
+      {investments.length > 0 && (() => {
+        const tickerMap: Record<string, any[]> = {}
+        for (const inv of investments) {
+          if (!tickerMap[inv.ticker]) tickerMap[inv.ticker] = []
+          tickerMap[inv.ticker].push(inv)
+        }
+        const groups = Object.entries(tickerMap).map(([ticker, lots]) => {
+          const totalShares = lots.reduce((s: number, l: any) => s + l.shares, 0)
+          const cost        = lots.reduce((s: number, l: any) => s + l.shares * l.purchasePrice, 0)
+          const value       = lots.reduce((s: number, l: any) => s + l.shares * l.currentPrice, 0)
+          const gl          = value - cost
+          const glPct       = cost > 0 ? (gl / cost) * 100 : 0
+          const weightedAvg = totalShares > 0 ? cost / totalShares : 0
+          const name        = lots.find((l: any) => l.name)?.name ?? ''
+          return { ticker, name, lots, totalShares, cost, value, gl, glPct, weightedAvg }
+        })
+        return (
+          <div className="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden">
+            <div className="px-4 py-3 border-b border-slate-800 flex items-center justify-between">
+              <h3 className="text-sm font-semibold text-slate-300">Investments</h3>
+              <span className={`text-xs font-semibold ${totalGainLoss >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                {totalGainLoss >= 0 ? '+' : ''}{formatCurrency(totalGainLoss)} ({totalGainLossPct >= 0 ? '+' : ''}{totalGainLossPct.toFixed(1)}%)
+              </span>
             </div>
-          ))}
-          <div className="flex justify-between px-4 py-3 border-t border-slate-800 bg-slate-800/30">
-            <span className="text-sm font-semibold">Total</span>
-            <span className="text-sm font-bold">{formatCurrency(totalValue)}</span>
+            {groups.map(g => (
+              <div key={g.ticker} className="border-b border-slate-800 last:border-0">
+                <div className="flex items-center gap-3 px-4 py-3">
+                  <div className="w-9 h-9 bg-slate-800 rounded-xl flex items-center justify-center shrink-0">
+                    <span className="text-xs font-bold text-purple-400">{g.ticker.slice(0, 4)}</span>
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-semibold">{g.ticker}</span>
+                      {g.lots.length > 1 && (
+                        <span className="text-xs bg-slate-700 text-slate-400 px-1.5 py-0.5 rounded-full">{g.lots.length} lots</span>
+                      )}
+                    </div>
+                    {g.name && <p className="text-xs text-slate-500 truncate">{g.name}</p>}
+                    <p className="text-xs text-slate-500">{g.totalShares} shares · avg {formatCurrency(g.weightedAvg)}</p>
+                  </div>
+                  <div className="text-right shrink-0">
+                    <p className="text-sm font-bold">{formatCurrency(g.value)}</p>
+                    <p className={`text-xs font-semibold ${g.gl >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                      {g.gl >= 0 ? '+' : ''}{formatCurrency(g.gl)} ({g.glPct >= 0 ? '+' : ''}{g.glPct.toFixed(1)}%)
+                    </p>
+                  </div>
+                </div>
+              </div>
+            ))}
+            <div className="flex justify-between px-4 py-3 bg-slate-800/40">
+              <span className="text-sm font-semibold">Total</span>
+              <span className="text-sm font-bold">{formatCurrency(totalValue)}</span>
+            </div>
           </div>
-        </div>
-      )}
+        )
+      })()}
     </div>
   )
 }
