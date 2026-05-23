@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { collection, onSnapshot, addDoc, updateDoc, deleteDoc, doc, serverTimestamp, orderBy, query } from 'firebase/firestore'
+import { collection, onSnapshot, addDoc, updateDoc, deleteDoc, doc, serverTimestamp, orderBy, query, writeBatch } from 'firebase/firestore'
 import { db, investmentsCol } from '../lib/firebase'
 import { Investment } from '../types'
 import { useAuth } from '../contexts/AuthContext'
@@ -33,10 +33,22 @@ export function useInvestments() {
     await deleteDoc(doc(db, investmentsCol(user.uid), id))
   }
 
+  // Update currentPrice for every lot sharing the same ticker in one batch
+  const updatePricesByTicker = async (prices: Record<string, number>) => {
+    if (!user) return
+    const batch = writeBatch(db)
+    for (const inv of investments) {
+      if (prices[inv.ticker] !== undefined) {
+        batch.update(doc(db, investmentsCol(user.uid), inv.id), { currentPrice: prices[inv.ticker], lastUpdated: serverTimestamp() })
+      }
+    }
+    await batch.commit()
+  }
+
   const totalCost = investments.reduce((s, i) => s + i.shares * i.purchasePrice, 0)
   const totalValue = investments.reduce((s, i) => s + i.shares * i.currentPrice, 0)
   const totalGainLoss = totalValue - totalCost
   const totalGainLossPct = totalCost > 0 ? (totalGainLoss / totalCost) * 100 : 0
 
-  return { investments, loading, addInvestment, updateInvestment, deleteInvestment, totalCost, totalValue, totalGainLoss, totalGainLossPct }
+  return { investments, loading, addInvestment, updateInvestment, deleteInvestment, updatePricesByTicker, totalCost, totalValue, totalGainLoss, totalGainLossPct }
 }

@@ -37,9 +37,10 @@ function groupByTicker(investments: Investment[]): TickerGroup[] {
 }
 
 export default function InvestmentsPage() {
-  const { investments, addInvestment, updateInvestment, deleteInvestment, totalCost, totalValue, totalGainLoss, totalGainLossPct } = useInvestments()
+  const { investments, addInvestment, updateInvestment, deleteInvestment, updatePricesByTicker, totalCost, totalValue, totalGainLoss, totalGainLossPct } = useInvestments()
   const { accounts, addTransaction } = useAccounts()
   const [showAdd, setShowAdd] = useState(false)
+  const [showUpdatePrices, setShowUpdatePrices] = useState(false)
   const [selected, setSelected] = useState<Investment | null>(null)
   const [showFund, setShowFund] = useState(false)
   const [expandedTickers, setExpandedTickers] = useState<Set<string>>(new Set())
@@ -58,9 +59,16 @@ export default function InvestmentsPage() {
     <div className="p-4 lg:p-6 space-y-5 max-w-3xl mx-auto">
       <div className="flex items-center justify-between pt-2">
         <h1 className="text-xl font-bold">Investments</h1>
-        <button onClick={() => setShowAdd(true)} className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold px-4 py-2 rounded-xl transition-colors">
-          <Plus size={16} /> Add
-        </button>
+        <div className="flex gap-2">
+          {groups.length > 0 && (
+            <button onClick={() => setShowUpdatePrices(true)} className="flex items-center gap-2 bg-slate-700 hover:bg-slate-600 text-white text-sm font-semibold px-4 py-2 rounded-xl transition-colors">
+              <RefreshCw size={15} /> Update Prices
+            </button>
+          )}
+          <button onClick={() => setShowAdd(true)} className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold px-4 py-2 rounded-xl transition-colors">
+            <Plus size={16} /> Add
+          </button>
+        </div>
       </div>
 
       {/* Portfolio summary */}
@@ -171,6 +179,13 @@ export default function InvestmentsPage() {
       )}
 
       {showAdd && <AddInvestmentModal onClose={() => setShowAdd(false)} onSave={async (d) => { await addInvestment(d); setShowAdd(false) }} />}
+      {showUpdatePrices && (
+        <UpdatePricesModal
+          groups={groups}
+          onClose={() => setShowUpdatePrices(false)}
+          onSave={async (prices) => { await updatePricesByTicker(prices); setShowUpdatePrices(false) }}
+        />
+      )}
       {selected && <EditInvestmentModal investment={selected} onClose={() => setSelected(null)} onUpdate={updateInvestment} onDelete={async (id) => { await deleteInvestment(id); setSelected(null) }} />}
       {showFund && <FundModal accounts={accounts.filter(a => a.type !== 'credit')} onClose={() => setShowFund(false)} onSave={async (accountId, accountName, amount) => {
         await addTransaction({ date: new Date(), amount, type: 'expense', categoryName: 'Investments', categoryIcon: '📈', categoryColor: '#22C55E', accountId, accountName, payee: 'Investment Funding', notes: '' })
@@ -267,26 +282,7 @@ function AddInvestmentModal({ onClose, onSave }: { onClose: () => void; onSave: 
   )
 }
 
-function EditInvestmentModal({ investment, onClose, onUpdate, onDelete }: { investment: Investment; onClose: () => void; onUpdate: (id: string, d: any) => void; onDelete: (id: string) => void }) {
-  const [newPrice, setNewPrice] = useState('')
-  const [loading, setLoading] = useState(false)
-  const [apiKey, setApiKey] = useState(localStorage.getItem('avApiKey') || '')
-
-  const fetchPrice = async () => {
-    const key = apiKey.trim()
-    if (!key) return alert('Enter an Alpha Vantage API key first.')
-    localStorage.setItem('avApiKey', key)
-    setLoading(true)
-    try {
-      const res = await fetch(`https://www.alphavantage.co/query?function=GLOBAL_QUOTE&symbol=${investment.ticker}&apikey=${key}`)
-      const json = await res.json()
-      const price = json['Global Quote']?.['05. price']
-      if (price) { setNewPrice(price); }
-      else alert('Ticker not found or API limit reached.')
-    } catch { alert('Network error') }
-    setLoading(false)
-  }
-
+function EditInvestmentModal({ investment, onClose, onDelete }: { investment: Investment; onClose: () => void; onUpdate: (id: string, d: any) => void; onDelete: (id: string) => void }) {
   const cost = investment.shares * investment.purchasePrice
   const value = investment.shares * investment.currentPrice
   const gl = value - cost
@@ -302,8 +298,9 @@ function EditInvestmentModal({ investment, onClose, onUpdate, onDelete }: { inve
           <div className="bg-slate-800 rounded-xl p-4 space-y-2 text-sm">
             <div className="flex justify-between"><span className="text-slate-400">Shares</span><span>{investment.shares}</span></div>
             <div className="flex justify-between"><span className="text-slate-400">Avg cost</span><span>{formatCurrency(investment.purchasePrice)}</span></div>
-            <div className="flex justify-between"><span className="text-slate-400">Current</span><span className="font-semibold">{formatCurrency(investment.currentPrice)}</span></div>
+            <div className="flex justify-between"><span className="text-slate-400">Current price</span><span className="font-semibold">{formatCurrency(investment.currentPrice)}</span></div>
             <div className="flex justify-between"><span className="text-slate-400">Broker</span><span>{investment.broker || '—'}</span></div>
+            <div className="flex justify-between"><span className="text-slate-400">Bought</span><span>{formatDate(investment.purchaseDate, { day: 'numeric', month: 'short', year: 'numeric' })}</span></div>
             <div className="flex justify-between border-t border-slate-700 pt-2">
               <span className="text-slate-400">P/L</span>
               <span className={`font-bold ${gl >= 0 ? 'text-green-400' : 'text-red-400'}`}>
@@ -311,37 +308,109 @@ function EditInvestmentModal({ investment, onClose, onUpdate, onDelete }: { inve
               </span>
             </div>
           </div>
-
-          {/* Update price */}
-          <div>
-            <label className="text-xs text-slate-400 font-medium block mb-2">Update current price</label>
-            <div className="flex gap-2">
-              <input value={newPrice} onChange={e => setNewPrice(e.target.value)} type="number" placeholder="New price"
-                className="flex-1 bg-slate-800 border border-slate-700 rounded-xl px-3 py-2.5 text-sm text-white outline-none focus:border-blue-500 placeholder-slate-600" />
-              <button onClick={() => { if (newPrice) { onUpdate(investment.id, { currentPrice: Number(newPrice) }); setNewPrice('') } }}
-                disabled={!newPrice}
-                className="bg-green-600 hover:bg-green-700 disabled:opacity-40 text-white text-sm font-semibold px-4 rounded-xl transition-colors">
-                Save
-              </button>
-            </div>
-          </div>
-
-          {/* Alpha Vantage */}
-          <div>
-            <label className="text-xs text-slate-400 font-medium block mb-2">Auto-fetch via Alpha Vantage (free, 25 req/day)</label>
-            <div className="flex gap-2">
-              <input value={apiKey} onChange={e => setApiKey(e.target.value)} placeholder="API key from alphavantage.co"
-                className="flex-1 bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-blue-500 placeholder-slate-600 font-mono" />
-              <button onClick={fetchPrice} disabled={loading}
-                className="bg-slate-700 hover:bg-slate-600 text-white text-sm px-3 rounded-xl transition-colors">
-                {loading ? <RefreshCw size={16} className="animate-spin" /> : <RefreshCw size={16} />}
-              </button>
-            </div>
-          </div>
-
-          <button onClick={() => { if (confirm(`Delete ${investment.ticker}?`)) onDelete(investment.id) }}
+          {investment.notes && <p className="text-sm text-slate-400 italic">"{investment.notes}"</p>}
+          <p className="text-xs text-slate-500 text-center">To update the current price, use "Update Prices" on the main page.</p>
+          <button onClick={() => { if (confirm(`Delete this ${investment.ticker} lot?`)) onDelete(investment.id) }}
             className="w-full text-red-400 text-sm py-2 hover:bg-red-400/10 rounded-xl transition-colors">
             Delete holding
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function UpdatePricesModal({ groups, onClose, onSave }: {
+  groups: TickerGroup[]
+  onClose: () => void
+  onSave: (prices: Record<string, number>) => Promise<void>
+}) {
+  const [prices, setPrices] = useState<Record<string, string>>(
+    Object.fromEntries(groups.map(g => [g.ticker, String(g.lots[0].currentPrice)]))
+  )
+  const [fetching, setFetching] = useState<Record<string, boolean>>({})
+  const [apiKey, setApiKey] = useState(localStorage.getItem('avApiKey') || '')
+  const [saving, setSaving] = useState(false)
+
+  const fetchOne = async (ticker: string) => {
+    const key = apiKey.trim()
+    if (!key) { alert('Enter an Alpha Vantage API key first.'); return }
+    localStorage.setItem('avApiKey', key)
+    setFetching(prev => ({ ...prev, [ticker]: true }))
+    try {
+      const res = await fetch(`https://www.alphavantage.co/query?function=GLOBAL_QUOTE&symbol=${ticker}&apikey=${key}`)
+      const json = await res.json()
+      const price = json['Global Quote']?.['05. price']
+      if (price) setPrices(prev => ({ ...prev, [ticker]: price }))
+      else alert(`${ticker}: not found or API limit reached.`)
+    } catch { alert('Network error') }
+    setFetching(prev => ({ ...prev, [ticker]: false }))
+  }
+
+  const fetchAll = async () => {
+    for (const g of groups) await fetchOne(g.ticker)
+  }
+
+  const handleSave = async () => {
+    setSaving(true)
+    const changed: Record<string, number> = {}
+    for (const g of groups) {
+      const val = Number(prices[g.ticker])
+      if (val > 0) changed[g.ticker] = val
+    }
+    await onSave(changed)
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/70 z-50 flex items-end lg:items-center justify-center" onClick={onClose}>
+      <div className="bg-slate-900 w-full lg:max-w-md rounded-t-2xl lg:rounded-2xl border border-slate-800 max-h-[92vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between p-5 border-b border-slate-800 sticky top-0 bg-slate-900">
+          <h2 className="text-lg font-bold">Update Prices</h2>
+          <button onClick={onClose} className="text-slate-400 hover:text-white"><X size={20} /></button>
+        </div>
+        <div className="p-5 space-y-4">
+          {/* Alpha Vantage API key */}
+          <div>
+            <label className="text-xs text-slate-400 font-medium block mb-1.5">Alpha Vantage API key (free, 25 req/day)</label>
+            <div className="flex gap-2">
+              <input value={apiKey} onChange={e => setApiKey(e.target.value)} placeholder="Get a free key at alphavantage.co"
+                className="flex-1 bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-blue-500 placeholder-slate-600 font-mono" />
+              <button onClick={fetchAll} className="bg-slate-700 hover:bg-slate-600 text-white text-xs font-semibold px-3 rounded-xl transition-colors whitespace-nowrap">
+                Fetch all
+              </button>
+            </div>
+          </div>
+
+          {/* One row per ticker */}
+          <div className="space-y-2">
+            {groups.map(g => (
+              <div key={g.ticker} className="flex items-center gap-3 bg-slate-800 rounded-xl px-4 py-3">
+                <div className="w-12 h-8 bg-slate-700 rounded-lg flex items-center justify-center shrink-0">
+                  <span className="text-xs font-bold text-purple-400">{g.ticker.slice(0, 4)}</span>
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs font-semibold">{g.ticker}</p>
+                  <p className="text-xs text-slate-500">
+                    {g.lots.length} {g.lots.length === 1 ? 'lot' : 'lots'} · {g.totalShares} shares
+                  </p>
+                </div>
+                <input
+                  type="number" value={prices[g.ticker] ?? ''} min="0" step="0.01"
+                  onKeyDown={e => ['e','E','+','-'].includes(e.key) && e.preventDefault()}
+                  onChange={e => setPrices(prev => ({ ...prev, [g.ticker]: e.target.value }))}
+                  className="w-28 bg-slate-700 border border-slate-600 rounded-lg px-2.5 py-1.5 text-sm text-white outline-none focus:border-blue-500 text-right"
+                />
+                <button onClick={() => fetchOne(g.ticker)} disabled={fetching[g.ticker]}
+                  className="text-slate-400 hover:text-white transition-colors p-1 shrink-0">
+                  <RefreshCw size={14} className={fetching[g.ticker] ? 'animate-spin' : ''} />
+                </button>
+              </div>
+            ))}
+          </div>
+
+          <button onClick={handleSave} disabled={saving}
+            className="w-full bg-green-600 hover:bg-green-700 disabled:opacity-40 text-white font-bold py-3.5 rounded-xl transition-colors">
+            {saving ? 'Saving…' : 'Save All Prices'}
           </button>
         </div>
       </div>
