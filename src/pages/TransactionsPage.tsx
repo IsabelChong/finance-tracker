@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { ChevronLeft, ChevronRight, Plus, Trash2 } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Plus, Trash2, Pencil } from 'lucide-react'
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer, Legend } from 'recharts'
 import { useAccounts } from '../hooks/useAccounts'
 import { useTransactions } from '../hooks/useTransactions'
@@ -12,7 +12,8 @@ export default function TransactionsPage() {
   const [month, setMonth] = useState(new Date())
   const [tab, setTab] = useState<'list' | 'chart'>('list')
   const [showAdd, setShowAdd] = useState(false)
-  const { accounts, addTransaction, deleteTransaction } = useAccounts()
+  const [editTx, setEditTx] = useState<Transaction | null>(null)
+  const { accounts, addTransaction, updateTransaction, deleteTransaction } = useAccounts()
   const { transactions, forMonth, monthlyIncome, monthlyExpenses, categoryTotals } = useTransactions()
   const { expenseCategories, incomeCategories } = useCategories()
 
@@ -111,14 +112,19 @@ export default function TransactionsPage() {
                         </p>
                         {tx.notes && <p className="text-xs text-slate-600 truncate">{tx.notes}</p>}
                       </div>
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-1.5">
                         <span className={`text-sm font-semibold shrink-0 ${tx.type === 'income' ? 'text-green-400' : 'text-slate-300'}`}>
                           {tx.type === 'income' ? '+' : '-'}{formatCurrency(tx.amount)}
                         </span>
                         <button
+                          onClick={() => setEditTx(tx)}
+                          className="text-slate-600 hover:text-blue-400 transition-colors opacity-0 group-hover:opacity-100 lg:block hidden p-1">
+                          <Pencil size={13} />
+                        </button>
+                        <button
                           onClick={() => deleteTransaction(tx.id, { amount: tx.amount, type: tx.type, accountId: tx.accountId, toAccountId: tx.toAccountId })}
-                          className="text-slate-700 hover:text-red-400 transition-colors opacity-0 group-hover:opacity-100 lg:block hidden">
-                          <Trash2 size={14} />
+                          className="text-slate-600 hover:text-red-400 transition-colors opacity-0 group-hover:opacity-100 lg:block hidden p-1">
+                          <Trash2 size={13} />
                         </button>
                       </div>
                     </div>
@@ -176,6 +182,17 @@ export default function TransactionsPage() {
           incomeCategories={incomeCategories}
           onSave={addTransaction}
           onClose={() => setShowAdd(false)}
+        />
+      )}
+
+      {editTx && (
+        <AddTransactionModal
+          accounts={accounts}
+          expenseCategories={expenseCategories}
+          incomeCategories={incomeCategories}
+          initialTx={editTx}
+          onUpdate={updateTransaction}
+          onClose={() => setEditTx(null)}
         />
       )}
     </div>

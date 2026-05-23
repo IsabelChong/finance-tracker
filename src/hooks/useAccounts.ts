@@ -96,6 +96,46 @@ export function useAccounts() {
     await batch.commit()
   }
 
+  const updateTransaction = async (
+    txId: string,
+    oldTx: { amount: number; type: string; accountId: string; toAccountId?: string },
+    newTx: Parameters<typeof addTransaction>[0]
+  ) => {
+    if (!user) return
+    const batch = writeBatch(db)
+
+    // Build updated transaction doc
+    const txData: Record<string, unknown> = {
+      date: newTx.date, amount: newTx.amount, type: newTx.type,
+      categoryName: newTx.categoryName, categoryIcon: newTx.categoryIcon, categoryColor: newTx.categoryColor,
+      accountId: newTx.accountId, accountName: newTx.accountName,
+      payee: newTx.payee, notes: newTx.notes,
+    }
+    if (newTx.toAccountId)   txData.toAccountId   = newTx.toAccountId
+    if (newTx.toAccountName) txData.toAccountName = newTx.toAccountName
+    batch.update(doc(db, transactionsCol(user.uid), txId), txData)
+
+    // Compute net balance delta per account
+    const deltas: Record<string, number> = {}
+    const apply = (accId: string, delta: number) => { deltas[accId] = (deltas[accId] ?? 0) + delta }
+
+    // Reverse old
+    apply(oldTx.accountId, oldTx.type === 'income' ? -oldTx.amount : oldTx.amount)
+    if (oldTx.type === 'transfer' && oldTx.toAccountId) apply(oldTx.toAccountId, -oldTx.amount)
+
+    // Apply new
+    apply(newTx.accountId, newTx.type === 'income' ? newTx.amount : -newTx.amount)
+    if (newTx.type === 'transfer' && newTx.toAccountId) apply(newTx.toAccountId, newTx.amount)
+
+    for (const [accId, delta] of Object.entries(deltas)) {
+      if (delta === 0) continue
+      const acc = accounts.find(a => a.id === accId)
+      if (acc) batch.update(doc(db, accountsCol(user.uid), accId), { balance: acc.balance + delta })
+    }
+
+    await batch.commit()
+  }
+
   const deleteTransaction = async (txId: string, tx: { amount: number; type: string; accountId: string; toAccountId?: string }) => {
     if (!user) return
     const batch = writeBatch(db)
@@ -115,5 +155,5 @@ export function useAccounts() {
   const bucketsForAccount = (accountId: string) => buckets.filter(b => b.accountId === accountId)
   const allocatedForAccount = (accountId: string) => bucketsForAccount(accountId).reduce((s, b) => s + b.allocatedAmount, 0)
 
-  return { accounts, buckets, loading, addAccount, updateAccount, deleteAccount, addBucket, updateBucket, deleteBucket, addTransaction, deleteTransaction, bucketsForAccount, allocatedForAccount }
+  return { accounts, buckets, loading, addAccount, updateAccount, deleteAccount, addBucket, updateBucket, deleteBucket, addTransaction, updateTransaction, deleteTransaction, bucketsForAccount, allocatedForAccount }
 }
