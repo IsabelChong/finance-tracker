@@ -67,7 +67,7 @@ export default function AddTransactionModal({ accounts, expenseCategories, incom
           {/* Type */}
           <div className="flex bg-slate-800 rounded-xl p-1 gap-1">
             {(['expense', 'income', 'transfer'] as TxType[]).map(t => (
-              <button key={t} onClick={() => { setType(t); setSelectedCat(null) }}
+              <button key={t} onClick={() => { setType(t); setSelectedCat(t === 'income' ? (incomeCategories.find(c => c.name === 'Salary') ?? null) : null) }}
                 className={`flex-1 py-2 rounded-lg text-sm font-semibold transition-colors capitalize ${type === t ? 'bg-blue-600 text-white' : 'text-slate-400 hover:text-white'}`}>
                 {t}
               </button>
