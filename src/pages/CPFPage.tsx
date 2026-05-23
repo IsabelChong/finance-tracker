@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { Pencil, X, Check, Plus, Trash2, Home, Info } from 'lucide-react'
+import DatePicker from '../components/DatePicker'
 import { Timestamp } from 'firebase/firestore'
 import { useCPF } from '../hooks/useCPF'
 import { HousingGoal } from '../types'
@@ -172,8 +173,7 @@ function HousingGoalModal({ goal, oaBalance, onSave, onClose }: {
 
           <div>
             <label className="text-xs text-slate-400 mb-1 block">Target date (optional)</label>
-            <input value={targetDate} onChange={e => setTargetDate(e.target.value)} type="date"
-              className={numInput} />
+            <DatePicker value={targetDate} onChange={setTargetDate} placeholder="Pick a target date" />
           </div>
           <div>
             <label className="text-xs text-slate-400 mb-1 block">Notes (optional)</label>

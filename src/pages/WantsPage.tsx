@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { Plus, X, Star, Heart, Plane, Trophy, Trash2 } from 'lucide-react'
+import DatePicker from '../components/DatePicker'
 import { Timestamp } from 'firebase/firestore'
 import { useWants } from '../hooks/useWants'
 import { useAccounts } from '../hooks/useAccounts'
@@ -358,8 +359,7 @@ function PurchaseModal({ want, bucket, accounts, expenseCategories, onClose, onC
           {/* Date */}
           <div>
             <label className="text-xs text-slate-400 font-medium block mb-1.5">Purchase date</label>
-            <input type="date" value={date} onChange={e => setDate(e.target.value)}
-              className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2.5 text-sm text-white outline-none focus:border-blue-500" />
+            <DatePicker value={date} onChange={setDate} />
           </div>
 
           {/* Account */}
@@ -460,8 +460,7 @@ function ReaddTransactionModal({ want, accounts, expenseCategories, onClose, onC
           </div>
           <div>
             <label className="text-xs text-slate-400 font-medium block mb-1.5">Purchase date</label>
-            <input type="date" value={date} onChange={e => setDate(e.target.value)}
-              className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2.5 text-sm text-white outline-none focus:border-blue-500" />
+            <DatePicker value={date} onChange={setDate} />
           </div>
           <div>
             <label className="text-xs text-slate-400 font-medium block mb-1.5">Deduct from account</label>
@@ -550,8 +549,7 @@ function AddWantModal({ accounts, onClose, onSave }: { accounts: any[]; onClose:
             <span className="text-sm text-slate-300">Set a target date</span>
           </label>
           {hasDate && (
-            <input type="date" value={targetDate} onChange={e => setTargetDate(e.target.value)} min={new Date().toISOString().split('T')[0]}
-              className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2.5 text-sm text-white outline-none focus:border-blue-500" />
+            <DatePicker value={targetDate} onChange={setTargetDate} min={new Date().toISOString().split('T')[0]} placeholder="Pick a target date" />
           )}
           {accounts.length > 0 && (
             <div>

@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { X } from 'lucide-react'
 import { Account, Category, Transaction } from '../../types'
+import DatePicker from '../../components/DatePicker'
 
 type TxType = 'income' | 'expense' | 'transfer'
 
@@ -127,8 +128,7 @@ export default function AddTransactionModal({ accounts, expenseCategories, incom
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="text-xs text-slate-400 font-medium block mb-1.5">Date</label>
-              <input type="date" value={date} onChange={e => setDate(e.target.value)}
-                className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2.5 text-sm text-white outline-none focus:border-blue-500" />
+              <DatePicker value={date} onChange={setDate} />
             </div>
             <div>
               <label className="text-xs text-slate-400 font-medium block mb-1.5">Payee</label>
