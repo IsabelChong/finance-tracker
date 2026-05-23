@@ -28,6 +28,7 @@ export default function AddTransactionModal({ accounts, expenseCategories, incom
   const [toAccountId, setToAccountId] = useState('')
   const [selectedCat, setSelectedCat] = useState<Category | null>(null)
   const [saving, setSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
   const cats = type === 'income' ? incomeCategories : expenseCategories
   const canSave = amount && Number(amount) > 0 && accountId &&
@@ -36,23 +37,29 @@ export default function AddTransactionModal({ accounts, expenseCategories, incom
   const handleSave = async () => {
     if (!canSave) return
     setSaving(true)
-    const acc = accounts.find(a => a.id === accountId)!
-    const toAcc = accounts.find(a => a.id === toAccountId)
-    await onSave({
-      date: new Date(date),
-      amount: Number(amount),
-      type,
-      categoryName: type === 'transfer' ? 'Transfer' : (selectedCat?.name ?? 'Other'),
-      categoryIcon: type === 'transfer' ? '↔️' : (selectedCat?.icon ?? '💸'),
-      categoryColor: type === 'transfer' ? '#6B7280' : (selectedCat?.colorHex ?? '#6B7280'),
-      accountId,
-      accountName: acc.name,
-      toAccountId: type === 'transfer' ? toAccountId : undefined,
-      toAccountName: type === 'transfer' ? toAcc?.name : undefined,
-      payee,
-      notes,
-    })
-    onClose()
+    setError(null)
+    try {
+      const acc = accounts.find(a => a.id === accountId)!
+      const toAcc = accounts.find(a => a.id === toAccountId)
+      await onSave({
+        date: new Date(date),
+        amount: Number(amount),
+        type,
+        categoryName: type === 'transfer' ? 'Transfer' : (selectedCat?.name ?? 'Other'),
+        categoryIcon: type === 'transfer' ? '↔️' : (selectedCat?.icon ?? '💸'),
+        categoryColor: type === 'transfer' ? '#6B7280' : (selectedCat?.colorHex ?? '#6B7280'),
+        accountId,
+        accountName: acc.name,
+        toAccountId: type === 'transfer' ? toAccountId : undefined,
+        toAccountName: type === 'transfer' ? toAcc?.name : undefined,
+        payee,
+        notes,
+      })
+      onClose()
+    } catch (e: any) {
+      setError(e?.message ?? 'Failed to save. Please try again.')
+      setSaving(false)
+    }
   }
 
   return (
@@ -142,6 +149,8 @@ export default function AddTransactionModal({ accounts, expenseCategories, incom
             <input value={notes} onChange={e => setNotes(e.target.value)} placeholder="Optional"
               className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2.5 text-sm text-white outline-none focus:border-blue-500 placeholder-slate-600" />
           </div>
+
+          {error && <p className="text-red-400 text-sm text-center">{error}</p>}
 
           <button
             onClick={handleSave} disabled={!canSave || saving}

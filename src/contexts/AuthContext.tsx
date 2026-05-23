@@ -23,16 +23,19 @@ async function seedCategories(uid: string) {
     return
   }
 
-  // Sync income categories: remove any not in the current defaults, add any missing
+  // Sync both income and expense categories to match current defaults
   const existing = snapshot.docs.map(d => ({ id: d.id, ...(d.data() as Omit<Category, 'id'>) }))
-  const existingIncome = existing.filter(c => c.type === 'income')
-  const defaultNames = new Set(DEFAULT_INCOME_CATEGORIES.map(c => c.name))
-  const existingNames = new Set(existingIncome.map(c => c.name))
 
-  await Promise.all([
-    ...existingIncome.filter(c => !defaultNames.has(c.name)).map(c => deleteDoc(doc(ref, c.id))),
-    ...DEFAULT_INCOME_CATEGORIES.filter(c => !existingNames.has(c.name)).map(c => addDoc(ref, { ...c, createdAt: serverTimestamp() })),
-  ])
+  for (const defaults of [DEFAULT_INCOME_CATEGORIES, DEFAULT_EXPENSE_CATEGORIES]) {
+    const type = defaults[0].type
+    const existingOfType = existing.filter(c => c.type === type)
+    const defaultNames = new Set(defaults.map(c => c.name))
+    const existingNames = new Set(existingOfType.map(c => c.name))
+    await Promise.all([
+      ...existingOfType.filter(c => !defaultNames.has(c.name)).map(c => deleteDoc(doc(ref, c.id))),
+      ...defaults.filter(c => !existingNames.has(c.name)).map(c => addDoc(ref, { ...c, createdAt: serverTimestamp() })),
+    ])
+  }
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
