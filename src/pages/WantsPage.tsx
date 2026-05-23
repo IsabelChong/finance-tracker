@@ -27,9 +27,11 @@ export default function WantsPage() {
   const [filterCat, setFilterCat]     = useState<FilterCat>('all')
   const [filterState, setFilterState] = useState<FilterState>('all')
   const [showAdd, setShowAdd]         = useState(false)
-  const [selected, setSelected]       = useState<Want | null>(null)
+  const [selectedId, setSelectedId]   = useState<string | null>(null)
   const [purchasing, setPurchasing]   = useState<Want | null>(null)
   const [readdingWant, setReaddingWant] = useState<Want | null>(null)
+
+  const selected = selectedId ? (wants.find(w => w.id === selectedId) ?? null) : null
 
   const activeWants    = wants.filter(w => w.state !== 'purchased')
   const completedWants = wants.filter(w => w.state === 'purchased')
@@ -134,7 +136,7 @@ export default function WantsPage() {
             return (
               <div key={want.id} className="bg-slate-900 border border-slate-800 hover:border-slate-600 rounded-2xl transition-all">
                 {/* Card body — opens edit modal */}
-                <div onClick={() => setSelected(want)} className="p-5 space-y-3 cursor-pointer">
+                <div onClick={() => setSelectedId(want.id)} className="p-5 space-y-3 cursor-pointer">
                   <div className="flex items-start justify-between">
                     <div className="flex items-center gap-2">
                       <span className={`flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-full ${meta.color} ${meta.bg}`}>
@@ -250,13 +252,13 @@ export default function WantsPage() {
           want={selected}
           bucket={getBucketForWant(selected)}
           account={accounts.find(a => a.id === getBucketForWant(selected)?.accountId)}
-          onClose={() => setSelected(null)}
+          onClose={() => setSelectedId(null)}
           onUpdateState={(state) => updateWant(selected.id, { state })}
           onAddToSavings={async (amount) => {
             const bucket = getBucketForWant(selected)
             if (bucket) await updateBucket(bucket.id, { allocatedAmount: bucket.allocatedAmount + amount })
           }}
-          onDelete={async () => { await deleteWant(selected.id); setSelected(null) }}
+          onDelete={async () => { await deleteWant(selected.id); setSelectedId(null) }}
         />
       )}
       {purchasing && (
@@ -582,10 +584,22 @@ function EditWantModal({ want, bucket, account, onClose, onUpdateState, onAddToS
   onClose: () => void; onUpdateState: (s: WantState) => void
   onAddToSavings: (amount: number) => void; onDelete: () => void
 }) {
-  const [addAmount, setAddAmount] = useState('')
+  const [adjustMode, setAdjustMode] = useState<'add' | 'remove'>('add')
+  const [addAmount, setAddAmount]   = useState('')
   const saved = bucket?.allocatedAmount ?? 0
   const pct   = want.targetAmount > 0 ? Math.min(100, (saved / want.targetAmount) * 100) : 0
   const meta  = CAT_META[want.category]
+
+  const handleTransfer = () => {
+    const n = Number(addAmount)
+    if (!n || n <= 0) return
+    if (adjustMode === 'remove') {
+      onAddToSavings(-Math.min(n, saved))
+    } else {
+      onAddToSavings(n)
+    }
+    setAddAmount('')
+  }
 
   return (
     <div className="fixed inset-0 bg-black/70 z-50 flex items-end lg:items-center justify-center" onClick={onClose}>
@@ -613,18 +627,31 @@ function EditWantModal({ want, bucket, account, onClose, onUpdateState, onAddToS
           </div>
 
           {bucket && account && (
-            <div>
-              <label className="text-xs text-slate-400 font-medium block mb-2">
-                Add to savings ({account.name} · {formatCurrency(account.balance - (bucket?.allocatedAmount ?? 0))} unallocated)
-              </label>
+            <div className="space-y-2">
               <div className="flex gap-2">
-                <input value={addAmount} onChange={e => setAddAmount(e.target.value)} type="number" placeholder="Amount to allocate"
+                <button onClick={() => { setAdjustMode('add'); setAddAmount('') }}
+                  className={`shrink-0 px-3 py-1.5 rounded-full text-sm font-medium transition-colors ${adjustMode === 'add' ? 'bg-blue-600 text-white' : 'bg-slate-800 text-slate-400 hover:text-white'}`}>
+                  Transfer to bucket
+                </button>
+                <button onClick={() => { setAdjustMode('remove'); setAddAmount('') }}
+                  className={`shrink-0 px-3 py-1.5 rounded-full text-sm font-medium transition-colors ${adjustMode === 'remove' ? 'bg-blue-600 text-white' : 'bg-slate-800 text-slate-400 hover:text-white'}`}>
+                  Return to savings
+                </button>
+              </div>
+              <p className="text-xs text-slate-500">
+                {adjustMode === 'add'
+                  ? `${account.name} · ${formatCurrency(account.balance - saved)} unallocated`
+                  : `Bucket has ${formatCurrency(saved)} allocated`}
+              </p>
+              <div className="flex gap-2">
+                <input value={addAmount} onChange={e => setAddAmount(e.target.value)} type="number"
+                  placeholder={adjustMode === 'add' ? 'Amount to allocate' : 'Amount to return'}
                   onKeyDown={e => ['e','E','+','-'].includes(e.key) && e.preventDefault()}
                   className="flex-1 bg-slate-800 border border-slate-700 rounded-xl px-3 py-2.5 text-sm text-white outline-none focus:border-blue-500 placeholder-slate-600" />
-                <button onClick={() => { if (addAmount) { onAddToSavings(Number(addAmount)); setAddAmount('') } }}
-                  disabled={!addAmount}
-                  className="bg-green-600 hover:bg-green-700 disabled:opacity-40 text-white text-sm font-semibold px-4 rounded-xl transition-colors">
-                  Add
+                <button onClick={handleTransfer}
+                  disabled={!addAmount || Number(addAmount) <= 0 || (adjustMode === 'remove' && saved <= 0)}
+                  className={`shrink-0 disabled:opacity-40 text-white text-sm font-semibold px-4 rounded-xl transition-colors ${adjustMode === 'add' ? 'bg-green-600 hover:bg-green-700' : 'bg-orange-600 hover:bg-orange-700'}`}>
+                  Transfer
                 </button>
               </div>
             </div>

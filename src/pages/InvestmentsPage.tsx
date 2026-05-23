@@ -399,15 +399,13 @@ function AddInvestmentModal({ existingGroups, accounts, oaBalance, toSGD, onClos
   const [purchasePrice, setPurchasePrice] = useState('')
   const [currentPrice, setCurrentPrice] = useState('')
   const [purchaseDate, setPurchaseDate] = useState(new Date().toISOString().split('T')[0])
-  const [broker, setBroker]             = useState('')
+  const [brokerAccountId, setBrokerAccountId] = useState('')
   const [currency, setCurrency]         = useState('USD')
   const [notes, setNotes]               = useState('')
   const [fundedBy, setFundedBy]         = useState<'cash' | 'cpf-oa'>('cash')
-  const [deductAccountId, setDeductAccountId] = useState('')
+  const [deductOnSave, setDeductOnSave] = useState(true)
 
   const brokerAccounts = accounts.filter(a => a.type === 'investment')
-  const otherAccounts  = accounts.filter(a => a.type !== 'investment')
-  const sortedAccounts = [...brokerAccounts, ...otherAccounts]
 
   const selectExisting = (g: TickerGroup) => {
     setPinnedTicker(g)
@@ -416,18 +414,17 @@ function AddInvestmentModal({ existingGroups, accounts, oaBalance, toSGD, onClos
     setCurrency(g.lots[0]?.currency ?? 'USD')
     setCurrentPrice(String(g.lots[0]?.currentPrice ?? ''))
     const lotBroker = g.lots[0]?.broker ?? ''
-    setBroker(lotBroker)
     if (g.hasCPFLots) {
       setFundedBy('cpf-oa')
     } else {
       const match = brokerAccounts.find(a => a.name.toLowerCase() === lotBroker.toLowerCase())
-      if (match) setDeductAccountId(match.id)
+      if (match) setBrokerAccountId(match.id)
     }
   }
 
   const clearExisting = () => {
     setPinnedTicker(null)
-    setTicker(''); setName(''); setCurrentPrice(''); setBroker(''); setCurrency('USD'); setFundedBy('cash'); setDeductAccountId('')
+    setTicker(''); setName(''); setCurrentPrice(''); setBrokerAccountId(''); setCurrency('USD'); setFundedBy('cash'); setDeductOnSave(true)
   }
 
   const cost  = (Number(shares) || 0) * (Number(purchasePrice) || 0)
@@ -509,8 +506,17 @@ function AddInvestmentModal({ existingGroups, accounts, oaBalance, toSGD, onClos
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="text-xs text-slate-400 font-medium block mb-1.5">Broker / Platform</label>
-              <input value={broker} onChange={e => setBroker(e.target.value)} placeholder="e.g. IBKR"
-                className={inputCls()} />
+              {brokerAccounts.length > 0 ? (
+                <select value={brokerAccountId} onChange={e => setBrokerAccountId(e.target.value)}
+                  className={inputCls()}>
+                  <option value="">Select broker</option>
+                  {brokerAccounts.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+                </select>
+              ) : (
+                <select disabled className={inputCls(true)}>
+                  <option>Add a broker account first</option>
+                </select>
+              )}
             </div>
             <div>
               <label className="text-xs text-slate-400 font-medium block mb-1.5">Date bought</label>
@@ -587,36 +593,21 @@ function AddInvestmentModal({ existingGroups, accounts, oaBalance, toSGD, onClos
             )}
           </div>
 
-          {/* Deduct from account (cash only) */}
-          {fundedBy === 'cash' && sortedAccounts.length > 0 && (
-            <div>
-              <label className="text-xs text-slate-400 font-medium block mb-1.5">Deduct from account <span className="text-slate-600">(optional)</span></label>
-              <select
-                value={deductAccountId}
-                onChange={e => setDeductAccountId(e.target.value)}
-                className={inputCls()}
-              >
-                <option value="">Don't deduct</option>
-                {brokerAccounts.length > 0 && (
-                  <optgroup label="Broker Accounts">
-                    {brokerAccounts.map(a => (
-                      <option key={a.id} value={a.id}>{a.name} — {formatCurrency(a.balance)}</option>
-                    ))}
-                  </optgroup>
+          {/* Deduct on save toggle (cash only, when broker selected) */}
+          {fundedBy === 'cash' && brokerAccountId && (
+            <div className="bg-slate-800 rounded-xl p-3 flex items-center justify-between gap-3">
+              <div className="min-w-0">
+                <p className="text-sm font-medium text-white">Deduct on save</p>
+                {shares && purchasePrice && (
+                  <p className="text-xs text-slate-400 mt-0.5 truncate">
+                    ≈ <span className="font-semibold text-slate-300">{formatCurrency(toSGD(Number(shares) * Number(purchasePrice), currency))}</span> SGD from {brokerAccounts.find(a => a.id === brokerAccountId)?.name}
+                  </p>
                 )}
-                {otherAccounts.length > 0 && (
-                  <optgroup label="Bank Accounts">
-                    {otherAccounts.map(a => (
-                      <option key={a.id} value={a.id}>{a.name} — {formatCurrency(a.balance)}</option>
-                    ))}
-                  </optgroup>
-                )}
-              </select>
-              {deductAccountId && shares && purchasePrice && (
-                <p className="text-xs text-slate-500 mt-1.5">
-                  ≈ <span className="font-semibold text-slate-300">{formatCurrency(toSGD(Number(shares) * Number(purchasePrice), currency))}</span> SGD will be deducted on save.
-                </p>
-              )}
+              </div>
+              <button onClick={() => setDeductOnSave(v => !v)}
+                className={`shrink-0 w-10 h-6 rounded-full transition-colors relative ${deductOnSave ? 'bg-blue-600' : 'bg-slate-600'}`}>
+                <div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-transform ${deductOnSave ? 'translate-x-5' : 'translate-x-1'}`} />
+              </button>
             </div>
           )}
 
@@ -624,8 +615,16 @@ function AddInvestmentModal({ existingGroups, accounts, oaBalance, toSGD, onClos
             className={inputCls()} />
 
           <button
-            onClick={() => onSave({ ticker, name, shares: Number(shares), purchasePrice: Number(purchasePrice), currentPrice: Number(currentPrice), purchaseDate: Timestamp.fromDate(new Date(purchaseDate)), broker, currency, notes, fundedBy, deductAccountId: deductAccountId || undefined })}
-            disabled={!ticker || !shares || !purchasePrice || !currentPrice}
+            onClick={() => {
+              const brokerName = brokerAccounts.find(a => a.id === brokerAccountId)?.name ?? ''
+              onSave({
+                ticker, name, shares: Number(shares), purchasePrice: Number(purchasePrice),
+                currentPrice: Number(currentPrice), purchaseDate: Timestamp.fromDate(new Date(purchaseDate)),
+                broker: brokerName, currency, notes, fundedBy,
+                deductAccountId: (fundedBy === 'cash' && deductOnSave && brokerAccountId) ? brokerAccountId : undefined,
+              })
+            }}
+            disabled={!ticker || !shares || !purchasePrice || !currentPrice || !brokerAccountId}
             className="w-full bg-blue-600 hover:bg-blue-700 disabled:opacity-40 text-white font-bold py-3.5 rounded-xl transition-colors">
             Add {pinnedTicker ? `${pinnedTicker.ticker} Lot` : 'Investment'}
           </button>
