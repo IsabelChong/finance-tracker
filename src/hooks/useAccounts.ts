@@ -63,7 +63,22 @@ export function useAccounts() {
     if (!user) return
     const batch = writeBatch(db)
     const txRef = doc(collection(db, transactionsCol(user.uid)))
-    batch.set(txRef, { ...tx, date: tx.date, createdAt: serverTimestamp() })
+    const txData: Record<string, unknown> = {
+      date: tx.date,
+      amount: tx.amount,
+      type: tx.type,
+      categoryName: tx.categoryName,
+      categoryIcon: tx.categoryIcon,
+      categoryColor: tx.categoryColor,
+      accountId: tx.accountId,
+      accountName: tx.accountName,
+      payee: tx.payee,
+      notes: tx.notes,
+      createdAt: serverTimestamp(),
+    }
+    if (tx.toAccountId)   txData.toAccountId   = tx.toAccountId
+    if (tx.toAccountName) txData.toAccountName = tx.toAccountName
+    batch.set(txRef, txData)
 
     const fromRef = doc(db, accountsCol(user.uid), tx.accountId)
     const fromAcc = accounts.find(a => a.id === tx.accountId)
