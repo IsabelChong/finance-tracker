@@ -5,6 +5,7 @@ import { useWants } from '../hooks/useWants'
 import { useTransactions } from '../hooks/useTransactions'
 import { formatCurrency, formatDate } from '../lib/utils'
 import { Account, AccountBucket } from '../types'
+import DatePicker from '../components/DatePicker'
 
 type Modal = null | 'addAccount' | { type: 'accountDetail'; account: Account } | { type: 'addBucket'; account: Account } | { type: 'editBucket'; bucket: AccountBucket }
 
@@ -13,7 +14,7 @@ const COLORS = ['#3b82f6','#22c55e','#ef4444','#f59e0b','#8b5cf6','#ec4899','#14
 interface DragState { section: 'bank' | 'credit'; from: number; over: number }
 
 export default function AccountsPage() {
-  const { accounts, buckets, addAccount, updateAccount, deleteAccount, reorderAccounts, addBucket, updateBucket, deleteBucket, reorderBuckets, bucketsForAccount, allocatedForAccount } = useAccounts()
+  const { accounts, buckets, addAccount, updateAccount, deleteAccount, reorderAccounts, addBucket, updateBucket, deleteBucket, reorderBuckets, addTransaction, bucketsForAccount, allocatedForAccount } = useAccounts()
   const { wants, updateWant } = useWants()
   const { transactions } = useTransactions()
   const [modal, setModal] = useState<Modal>(null)
@@ -148,6 +149,15 @@ export default function AccountsPage() {
           onReorderBuckets={reorderBuckets}
           onReconcile={(id, bal) => updateAccount(id, { balance: bal })}
           onDelete={async (id) => { await deleteAccount(id); setModal(null) }}
+          onLogSpending={async (amount, date, payee) => {
+            const acc = modal.account
+            await addTransaction({
+              date, amount, type: 'expense',
+              categoryName: 'Credit Spending', categoryIcon: '💳', categoryColor: '#6366F1',
+              accountId: acc.id, accountName: acc.name,
+              payee, notes: '',
+            })
+          }}
         />
       )}
       {modal && typeof modal === 'object' && modal.type === 'addBucket' && (
@@ -207,7 +217,7 @@ function AccountRow({ account, allocated, onClick, reorderMode }: {
   )
 }
 
-function AccountDetailModal({ account, buckets, transactions, wants, onClose, onAddBucket, onUpdateBucket, onDeleteBucket, onReorderBuckets, onReconcile, onDelete }: {
+function AccountDetailModal({ account, buckets, transactions, wants, onClose, onAddBucket, onUpdateBucket, onDeleteBucket, onReorderBuckets, onReconcile, onDelete, onLogSpending }: {
   account: Account; buckets: AccountBucket[]; transactions: any[]; wants: any[]
   onClose: () => void; onAddBucket: () => void
   onUpdateBucket: (id: string, d: Partial<AccountBucket>) => void
@@ -215,9 +225,11 @@ function AccountDetailModal({ account, buckets, transactions, wants, onClose, on
   onReorderBuckets: (ids: string[]) => void
   onReconcile: (id: string, balance: number) => void
   onDelete: (id: string) => void
+  onLogSpending?: (amount: number, date: Date, payee: string) => Promise<void>
 }) {
   const [reconcile, setReconcile] = useState('')
   const [showReconcile, setShowReconcile] = useState(false)
+  const [showLogSpending, setShowLogSpending] = useState(false)
   const [bucketReorder, setBucketReorder] = useState(false)
   const [bucketDrag, setBucketDrag] = useState<{ from: number; over: number } | null>(null)
 
@@ -258,19 +270,27 @@ function AccountDetailModal({ account, buckets, transactions, wants, onClose, on
         <div className="p-5 space-y-5">
           {/* Balance */}
           <div className="text-center">
-            <p className="text-xs text-slate-400 mb-1">{account.type === 'credit' ? 'Amount Owed' : 'Balance'}</p>
+            <p className="text-xs text-slate-400 mb-1">{account.type === 'credit' ? 'Balance Owed' : 'Balance'}</p>
             <p className={`text-4xl font-bold ${account.type === 'credit' ? 'text-red-400' : ''}`}>{formatCurrency(account.balance)}</p>
-            {!showReconcile && (
-              <button onClick={() => setShowReconcile(true)} className="inline-flex items-center gap-1.5 text-xs font-medium text-slate-400 hover:text-blue-400 mt-3 px-3 py-1.5 bg-slate-800 hover:bg-slate-700 rounded-lg transition-colors">
-                <Pencil size={11} /> Reconcile balance
-              </button>
-            )}
+            <div className="flex flex-wrap justify-center gap-2 mt-3">
+              {!showReconcile && (
+                <button onClick={() => setShowReconcile(true)} className="inline-flex items-center gap-1.5 text-xs font-medium text-slate-400 hover:text-blue-400 px-3 py-1.5 bg-slate-800 hover:bg-slate-700 rounded-lg transition-colors">
+                  <Pencil size={11} /> Reconcile
+                </button>
+              )}
+              {account.type === 'credit' && !showReconcile && (
+                <button onClick={() => setShowLogSpending(true)} className="inline-flex items-center gap-1.5 text-xs font-medium text-indigo-400 hover:text-indigo-300 px-3 py-1.5 bg-indigo-500/10 hover:bg-indigo-500/20 rounded-lg transition-colors">
+                  💳 Log spending
+                </button>
+              )}
+            </div>
             {showReconcile && (
               <div className="flex gap-2 mt-3 justify-center">
                 <input value={reconcile} onChange={e => setReconcile(e.target.value)} placeholder={String(account.balance)} type="number"
                   className="bg-slate-800 border border-slate-700 rounded-lg px-3 py-1.5 text-sm w-36 text-center outline-none focus:border-blue-500" />
                 <button onClick={() => { if (reconcile) { onReconcile(account.id, Number(reconcile)); setShowReconcile(false) } }}
                   className="bg-blue-600 text-white text-sm px-3 rounded-lg">Save</button>
+                <button onClick={() => setShowReconcile(false)} className="text-slate-400 text-sm px-2">✕</button>
               </div>
             )}
           </div>
@@ -355,6 +375,83 @@ function AccountDetailModal({ account, buckets, transactions, wants, onClose, on
           <button onClick={() => { if (confirm(`Delete ${account.name}?`)) onDelete(account.id) }}
             className="w-full text-red-400 text-sm py-2 hover:bg-red-400/10 rounded-xl transition-colors">
             Delete account
+          </button>
+        </div>
+      </div>
+
+      {showLogSpending && onLogSpending && (
+        <CreditSpendingModal
+          account={account}
+          onClose={() => setShowLogSpending(false)}
+          onSave={async (amount, date, payee) => {
+            await onLogSpending(amount, date, payee)
+            setShowLogSpending(false)
+          }}
+        />
+      )}
+    </div>
+  )
+}
+
+function CreditSpendingModal({ account, onClose, onSave }: {
+  account: Account
+  onClose: () => void
+  onSave: (amount: number, date: Date, payee: string) => Promise<void>
+}) {
+  const [amount, setAmount] = useState('')
+  const [date, setDate] = useState(new Date().toISOString().split('T')[0])
+  const [payee, setPayee] = useState('')
+  const [saving, setSaving] = useState(false)
+
+  const handleSave = async () => {
+    if (!amount || Number(amount) <= 0) return
+    setSaving(true)
+    await onSave(Number(amount), new Date(date), payee)
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/70 z-[60] flex items-end lg:items-center justify-center" onClick={onClose}>
+      <div className="bg-slate-900 w-full lg:max-w-sm rounded-t-2xl lg:rounded-2xl border border-slate-800" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between p-5 border-b border-slate-800">
+          <div>
+            <h2 className="text-base font-bold">Log Credit Spending</h2>
+            <p className="text-xs text-slate-400 mt-0.5">{account.name}</p>
+          </div>
+          <button onClick={onClose} className="text-slate-400 hover:text-white"><X size={20} /></button>
+        </div>
+        <div className="p-5 space-y-4">
+          <p className="text-xs text-slate-500 bg-slate-800 rounded-xl px-3 py-2.5">
+            Use this to log a lump-sum of credit card spending — e.g. your monthly statement total. It increases your balance owed.
+          </p>
+
+          <div className="bg-slate-800 rounded-xl p-4">
+            <label className="text-xs text-slate-400 font-medium block mb-1">Amount (SGD)</label>
+            <input
+              type="number" value={amount} onChange={e => setAmount(e.target.value)} placeholder="0.00"
+              onKeyDown={e => ['e','E','+','-'].includes(e.key) && e.preventDefault()}
+              autoFocus
+              className="w-full bg-transparent text-3xl font-bold text-white outline-none placeholder-slate-600"
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="text-xs text-slate-400 font-medium block mb-1.5">Date</label>
+              <DatePicker value={date} onChange={setDate} />
+            </div>
+            <div>
+              <label className="text-xs text-slate-400 font-medium block mb-1.5">Description (optional)</label>
+              <input value={payee} onChange={e => setPayee(e.target.value)} placeholder="e.g. March bill"
+                className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2.5 text-sm text-white outline-none focus:border-blue-500 placeholder-slate-600" />
+            </div>
+          </div>
+
+          <button
+            onClick={handleSave}
+            disabled={!amount || Number(amount) <= 0 || saving}
+            className="w-full bg-indigo-600 hover:bg-indigo-700 disabled:opacity-40 text-white font-bold py-3.5 rounded-xl transition-colors"
+          >
+            {saving ? 'Saving…' : 'Log Spending'}
           </button>
         </div>
       </div>

@@ -64,6 +64,21 @@ export function useAccounts() {
     await deleteDoc(doc(db, bucketsCol(user.uid), id))
   }
 
+  // --- balance delta helpers ---
+  // Credit balance = amount owed. Spending increases it; payments decrease it.
+  // Regular balance = money held. Income increases it; expenses decrease it.
+  // "from" role: the account being charged / paying out
+  // "to" role: the account receiving a transfer
+  const fromDelta = (acc: Account, type: 'income' | 'expense' | 'transfer', amount: number): number => {
+    if (type === 'transfer') return acc.type === 'credit' ? amount  : -amount
+    // credit: expense=+debt, income=refund=-debt; regular: income=+, expense=-
+    return acc.type === 'credit'
+      ? (type === 'expense' ? amount : -amount)
+      : (type === 'income'  ? amount : -amount)
+  }
+  const toDelta = (acc: Account, amount: number): number =>
+    acc.type === 'credit' ? -amount : amount  // payment reduces credit debt; transfer fills regular
+
   // Add a transaction and atomically update account balance(s)
   const addTransaction = async (tx: {
     date: Date; amount: number; type: 'income' | 'expense' | 'transfer'
@@ -92,17 +107,20 @@ export function useAccounts() {
     if (tx.toAccountName) txData.toAccountName = tx.toAccountName
     batch.set(txRef, txData)
 
-    const fromRef = doc(db, accountsCol(user.uid), tx.accountId)
     const fromAcc = accounts.find(a => a.id === tx.accountId)
     if (fromAcc) {
-      const delta = tx.type === 'income' ? tx.amount : -tx.amount
-      batch.update(fromRef, { balance: fromAcc.balance + delta })
+      batch.update(doc(db, accountsCol(user.uid), tx.accountId), {
+        balance: fromAcc.balance + fromDelta(fromAcc, tx.type, tx.amount),
+      })
     }
 
     if (tx.type === 'transfer' && tx.toAccountId) {
-      const toRef = doc(db, accountsCol(user.uid), tx.toAccountId)
       const toAcc = accounts.find(a => a.id === tx.toAccountId)
-      if (toAcc) batch.update(toRef, { balance: toAcc.balance + tx.amount })
+      if (toAcc) {
+        batch.update(doc(db, accountsCol(user.uid), tx.toAccountId), {
+          balance: toAcc.balance + toDelta(toAcc, tx.amount),
+        })
+      }
     }
 
     await batch.commit()
@@ -117,7 +135,6 @@ export function useAccounts() {
     if (!user) return
     const batch = writeBatch(db)
 
-    // Build updated transaction doc
     const txData: Record<string, unknown> = {
       date: newTx.date, amount: newTx.amount, type: newTx.type,
       categoryName: newTx.categoryName, categoryIcon: newTx.categoryIcon, categoryColor: newTx.categoryColor,
@@ -128,17 +145,24 @@ export function useAccounts() {
     if (newTx.toAccountName) txData.toAccountName = newTx.toAccountName
     batch.update(doc(db, transactionsCol(user.uid), txId), txData)
 
-    // Compute net balance delta per account
     const deltas: Record<string, number> = {}
     const apply = (accId: string, delta: number) => { deltas[accId] = (deltas[accId] ?? 0) + delta }
 
-    // Reverse old
-    apply(oldTx.accountId, oldTx.type === 'income' ? -oldTx.amount : oldTx.amount)
-    if (oldTx.type === 'transfer' && oldTx.toAccountId) apply(oldTx.toAccountId, -oldTx.amount)
+    // Reverse old transaction
+    const oldFromAcc = accounts.find(a => a.id === oldTx.accountId)
+    if (oldFromAcc) apply(oldTx.accountId, -fromDelta(oldFromAcc, oldTx.type as any, oldTx.amount))
+    if (oldTx.type === 'transfer' && oldTx.toAccountId) {
+      const oldToAcc = accounts.find(a => a.id === oldTx.toAccountId)
+      if (oldToAcc) apply(oldTx.toAccountId, -toDelta(oldToAcc, oldTx.amount))
+    }
 
-    // Apply new
-    apply(newTx.accountId, newTx.type === 'income' ? newTx.amount : -newTx.amount)
-    if (newTx.type === 'transfer' && newTx.toAccountId) apply(newTx.toAccountId, newTx.amount)
+    // Apply new transaction
+    const newFromAcc = accounts.find(a => a.id === newTx.accountId)
+    if (newFromAcc) apply(newTx.accountId, fromDelta(newFromAcc, newTx.type, newTx.amount))
+    if (newTx.type === 'transfer' && newTx.toAccountId) {
+      const newToAcc = accounts.find(a => a.id === newTx.toAccountId)
+      if (newToAcc) apply(newTx.toAccountId, toDelta(newToAcc, newTx.amount))
+    }
 
     for (const [accId, delta] of Object.entries(deltas)) {
       if (delta === 0) continue
@@ -153,14 +177,20 @@ export function useAccounts() {
     if (!user) return
     const batch = writeBatch(db)
     batch.delete(doc(db, transactionsCol(user.uid), txId))
+
     const fromAcc = accounts.find(a => a.id === tx.accountId)
     if (fromAcc) {
-      const delta = tx.type === 'income' ? -tx.amount : tx.amount
-      batch.update(doc(db, accountsCol(user.uid), tx.accountId), { balance: fromAcc.balance + delta })
+      batch.update(doc(db, accountsCol(user.uid), tx.accountId), {
+        balance: fromAcc.balance - fromDelta(fromAcc, tx.type as any, tx.amount),
+      })
     }
     if (tx.type === 'transfer' && tx.toAccountId) {
       const toAcc = accounts.find(a => a.id === tx.toAccountId)
-      if (toAcc) batch.update(doc(db, accountsCol(user.uid), tx.toAccountId), { balance: toAcc.balance - tx.amount })
+      if (toAcc) {
+        batch.update(doc(db, accountsCol(user.uid), tx.toAccountId), {
+          balance: toAcc.balance - toDelta(toAcc, tx.amount),
+        })
+      }
     }
     await batch.commit()
   }
