@@ -530,19 +530,36 @@ function BucketItem({ bucket, wants, pinned, reorderMode, onUpdate, onDelete }: 
 
 function BucketAmountEditor({ bucket, onUpdate }: { bucket: AccountBucket; onUpdate: (id: string, d: Partial<AccountBucket>) => void }) {
   const [editing, setEditing] = useState(false)
-  const [val, setVal] = useState('')
+  const [mode, setMode]       = useState<'+' | '-'>('+')
+  const [val, setVal]         = useState('')
+
+  const confirm = () => {
+    const delta = Number(val)
+    if (delta > 0) {
+      const next = mode === '+' ? bucket.allocatedAmount + delta : Math.max(0, bucket.allocatedAmount - delta)
+      onUpdate(bucket.id, { allocatedAmount: next })
+    }
+    setEditing(false)
+    setVal('')
+  }
+
   if (editing) {
     return (
-      <div className="flex gap-1">
-        <input value={val} onChange={e => setVal(e.target.value)} type="number" placeholder={String(bucket.allocatedAmount)}
-          className="bg-slate-700 rounded px-2 py-0.5 text-xs w-24 outline-none" autoFocus />
-        <button onClick={() => { if (val) onUpdate(bucket.id, { allocatedAmount: Number(val) }); setEditing(false) }}
-          className="text-blue-400 text-xs">✓</button>
+      <div className="flex items-center gap-1">
+        <button onClick={() => setMode(m => m === '+' ? '-' : '+')}
+          className={`w-6 h-6 rounded text-xs font-bold transition-colors ${mode === '+' ? 'bg-green-600 text-white' : 'bg-red-600/80 text-white'}`}>
+          {mode}
+        </button>
+        <input value={val} onChange={e => setVal(e.target.value)} type="number" placeholder="0"
+          onKeyDown={e => { if (e.key === 'Enter') confirm(); if (e.key === 'Escape') { setEditing(false); setVal('') }; ['e','E','+','-'].includes(e.key) && e.preventDefault() }}
+          className="bg-slate-700 rounded px-2 py-0.5 text-xs w-20 outline-none" autoFocus />
+        <button onClick={confirm} className="text-blue-400 text-xs">✓</button>
+        <button onClick={() => { setEditing(false); setVal('') }} className="text-slate-500 text-xs">✕</button>
       </div>
     )
   }
   return (
-    <button onClick={() => { setVal(String(bucket.allocatedAmount)); setEditing(true) }}
+    <button onClick={() => { setMode('+'); setEditing(true) }}
       className="text-sm font-semibold hover:text-blue-400 transition-colors">{formatCurrency(bucket.allocatedAmount)}</button>
   )
 }
