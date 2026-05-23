@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { Plus, X, RefreshCw, TrendingUp, TrendingDown, ChevronDown, ChevronRight } from 'lucide-react'
+import DatePicker from '../components/DatePicker'
 import { useInvestments } from '../hooks/useInvestments'
 import { useAccounts } from '../hooks/useAccounts'
 import { formatCurrency, formatPercent, formatDate } from '../lib/utils'
@@ -202,6 +203,7 @@ function AddInvestmentModal({ onClose, onSave }: { onClose: () => void; onSave: 
   const [shares, setShares] = useState('')
   const [purchasePrice, setPurchasePrice] = useState('')
   const [currentPrice, setCurrentPrice] = useState('')
+  const [purchaseDate, setPurchaseDate] = useState(new Date().toISOString().split('T')[0])
   const [broker, setBroker] = useState('')
   const [currency, setCurrency] = useState('SGD')
   const [notes, setNotes] = useState('')
@@ -236,10 +238,16 @@ function AddInvestmentModal({ onClose, onSave }: { onClose: () => void; onSave: 
             <input value={name} onChange={e => setName(e.target.value)} placeholder="Vanguard FTSE All-World ETF"
               className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2.5 text-sm text-white outline-none focus:border-blue-500 placeholder-slate-600" />
           </div>
-          <div>
-            <label className="text-xs text-slate-400 font-medium block mb-1.5">Broker / Platform</label>
-            <input value={broker} onChange={e => setBroker(e.target.value)} placeholder="e.g. IBKR, Tiger Brokers"
-              className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2.5 text-sm text-white outline-none focus:border-blue-500 placeholder-slate-600" />
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="text-xs text-slate-400 font-medium block mb-1.5">Broker / Platform</label>
+              <input value={broker} onChange={e => setBroker(e.target.value)} placeholder="e.g. IBKR, Tiger Brokers"
+                className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2.5 text-sm text-white outline-none focus:border-blue-500 placeholder-slate-600" />
+            </div>
+            <div>
+              <label className="text-xs text-slate-400 font-medium block mb-1.5">Date bought</label>
+              <DatePicker value={purchaseDate} onChange={setPurchaseDate} />
+            </div>
           </div>
           <div className="grid grid-cols-3 gap-3">
             <div>
@@ -271,7 +279,7 @@ function AddInvestmentModal({ onClose, onSave }: { onClose: () => void; onSave: 
           )}
           <input value={notes} onChange={e => setNotes(e.target.value)} placeholder="Notes (optional)"
             className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2.5 text-sm text-white outline-none focus:border-blue-500 placeholder-slate-600" />
-          <button onClick={() => onSave({ ticker, name, shares: Number(shares), purchasePrice: Number(purchasePrice), currentPrice: Number(currentPrice), purchaseDate: Timestamp.now(), broker, currency, notes })}
+          <button onClick={() => onSave({ ticker, name, shares: Number(shares), purchasePrice: Number(purchasePrice), currentPrice: Number(currentPrice), purchaseDate: Timestamp.fromDate(new Date(purchaseDate)), broker, currency, notes })}
             disabled={!ticker || !shares || !purchasePrice || !currentPrice}
             className="w-full bg-blue-600 hover:bg-blue-700 disabled:opacity-40 text-white font-bold py-3.5 rounded-xl transition-colors">
             Add Investment
