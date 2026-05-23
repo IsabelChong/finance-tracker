@@ -1,8 +1,8 @@
 import { createContext, useContext, useEffect, useState, ReactNode } from 'react'
 import { User, onAuthStateChanged, signInWithPopup, signOut } from 'firebase/auth'
-import { collection, getDocs, addDoc, serverTimestamp } from 'firebase/firestore'
+import { collection, getDocs, addDoc, deleteDoc, doc, serverTimestamp } from 'firebase/firestore'
 import { auth, db, googleProvider, categoriesCol } from '../lib/firebase'
-import { DEFAULT_EXPENSE_CATEGORIES, DEFAULT_INCOME_CATEGORIES } from '../types'
+import { Category, DEFAULT_EXPENSE_CATEGORIES, DEFAULT_INCOME_CATEGORIES } from '../types'
 
 interface AuthContextType {
   user: User | null
@@ -16,10 +16,23 @@ const AuthContext = createContext<AuthContextType | null>(null)
 async function seedCategories(uid: string) {
   const ref = collection(db, categoriesCol(uid))
   const snapshot = await getDocs(ref)
+
   if (snapshot.empty) {
     const all = [...DEFAULT_EXPENSE_CATEGORIES, ...DEFAULT_INCOME_CATEGORIES]
     await Promise.all(all.map(cat => addDoc(ref, { ...cat, createdAt: serverTimestamp() })))
+    return
   }
+
+  // Sync income categories: remove any not in the current defaults, add any missing
+  const existing = snapshot.docs.map(d => ({ id: d.id, ...(d.data() as Omit<Category, 'id'>) }))
+  const existingIncome = existing.filter(c => c.type === 'income')
+  const defaultNames = new Set(DEFAULT_INCOME_CATEGORIES.map(c => c.name))
+  const existingNames = new Set(existingIncome.map(c => c.name))
+
+  await Promise.all([
+    ...existingIncome.filter(c => !defaultNames.has(c.name)).map(c => deleteDoc(doc(ref, c.id))),
+    ...DEFAULT_INCOME_CATEGORIES.filter(c => !existingNames.has(c.name)).map(c => addDoc(ref, { ...c, createdAt: serverTimestamp() })),
+  ])
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {

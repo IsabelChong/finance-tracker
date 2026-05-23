@@ -115,10 +115,6 @@ export const DEFAULT_EXPENSE_CATEGORIES: Omit<Category, 'id'>[] = [
 ]
 
 export const DEFAULT_INCOME_CATEGORIES: Omit<Category, 'id'>[] = [
-  { name: 'Salary',           icon: '💼', colorHex: '#22C55E', type: 'income', sortOrder: 16, isDefault: true },
-  { name: 'Freelance',        icon: '🧑‍💻', colorHex: '#10B981', type: 'income', sortOrder: 17, isDefault: true },
-  { name: 'Interest Income',  icon: '🏦', colorHex: '#3B82F6', type: 'income', sortOrder: 18, isDefault: true },
-  { name: 'Investment Returns',icon:'📊', colorHex: '#8B5CF6', type: 'income', sortOrder: 19, isDefault: true },
-  { name: 'Gift Received',    icon: '🎀', colorHex: '#F43F5E', type: 'income', sortOrder: 20, isDefault: true },
-  { name: 'Other Income',     icon: '➕', colorHex: '#6B7280', type: 'income', sortOrder: 21, isDefault: true },
+  { name: 'Salary',    icon: '💼', colorHex: '#22C55E', type: 'income', sortOrder: 16, isDefault: true },
+  { name: 'Freelance', icon: '🧑‍💻', colorHex: '#10B981', type: 'income', sortOrder: 17, isDefault: true },
 ]
