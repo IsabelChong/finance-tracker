@@ -113,17 +113,19 @@ export default function InvestmentsPage() {
               onClick={() => { setReorderMode(r => !r); setDragState(null); setFilterBy('all') }}
               className={`flex items-center gap-1.5 text-sm font-semibold px-3 py-2 rounded-xl transition-colors ${reorderMode ? 'bg-green-600 hover:bg-green-700 text-white' : 'bg-slate-700 hover:bg-slate-600 text-white'}`}
             >
-              {reorderMode ? <><Check size={14} /> Done</> : <><GripVertical size={14} /> Reorder</>}
+              {reorderMode
+                ? <><Check size={14} /><span className="hidden sm:inline"> Done</span></>
+                : <><GripVertical size={14} /><span className="hidden sm:inline"> Reorder</span></>}
             </button>
           )}
           {!reorderMode && groups.length > 0 && (
-            <button onClick={() => setShowUpdatePrices(true)} className="flex items-center gap-2 bg-slate-700 hover:bg-slate-600 text-white text-sm font-semibold px-4 py-2 rounded-xl transition-colors">
-              <RefreshCw size={15} /> Update Prices
+            <button onClick={() => setShowUpdatePrices(true)} className="flex items-center gap-1.5 bg-slate-700 hover:bg-slate-600 text-white text-sm font-semibold px-3 py-2 rounded-xl transition-colors">
+              <RefreshCw size={15} /><span className="hidden sm:inline"> Update Prices</span>
             </button>
           )}
           {!reorderMode && (
-            <button onClick={() => setShowAdd(true)} className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold px-4 py-2 rounded-xl transition-colors">
-              <Plus size={16} /> Add
+            <button onClick={() => setShowAdd(true)} className="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold px-3 py-2 rounded-xl transition-colors">
+              <Plus size={16} /><span className="hidden sm:inline"> Add</span>
             </button>
           )}
         </div>
@@ -242,7 +244,7 @@ export default function InvestmentsPage() {
                         <span className="text-xs bg-blue-500/20 text-blue-300 px-1.5 py-0.5 rounded-full">CPF OA</span>
                       )}
                       {multipleLots && (
-                        <span className="text-xs bg-slate-700 text-slate-300 px-2 py-0.5 rounded-full">
+                        <span className="text-xs bg-slate-700 text-slate-300 px-2 py-0.5 rounded-full shrink-0 whitespace-nowrap">
                           {group.lots.length} lots
                         </span>
                       )}

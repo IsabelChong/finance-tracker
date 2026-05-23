@@ -12,6 +12,7 @@
 
 @layer utilities {
   .safe-bottom { padding-bottom: env(safe-area-inset-bottom); }
+  .safe-top    { padding-top: env(safe-area-inset-top); }
   .scrollbar-hide::-webkit-scrollbar { display: none; }
   .scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
 }
