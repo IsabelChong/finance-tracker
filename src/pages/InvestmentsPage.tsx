@@ -317,12 +317,13 @@ export default function InvestmentsPage() {
 
       {showAdd && <AddInvestmentModal existingGroups={groups} accounts={accounts.filter(a => a.type !== 'credit')} oaBalance={cpf?.ordinaryBalance ?? 0} toSGD={toSGD} onClose={() => setShowAdd(false)} onSave={async (d) => {
         setShowAdd(false)
-        await addInvestment(d)
+        const { deductAccountId, ...investmentData } = d
+        await addInvestment(investmentData)
         const sgdCost = toSGD((d.shares as number) * (d.purchasePrice as number), d.currency as string)
         if (d.fundedBy === 'cpf-oa') {
           await incrementOABalance(-sgdCost)
-        } else if (d.deductAccountId) {
-          const acc = accounts.find(a => a.id === d.deductAccountId)
+        } else if (deductAccountId) {
+          const acc = accounts.find(a => a.id === deductAccountId)
           await addTransaction({
             date: new Date(),
             amount: sgdCost,
@@ -330,7 +331,7 @@ export default function InvestmentsPage() {
             categoryName: 'Investment',
             categoryIcon: '📈',
             categoryColor: '#22C55E',
-            accountId: d.deductAccountId,
+            accountId: deductAccountId,
             accountName: acc?.name ?? '',
             payee: d.ticker as string,
             notes: `Purchase of ${d.shares} ${d.ticker} shares`,
