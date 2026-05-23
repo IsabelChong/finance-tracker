@@ -8,6 +8,7 @@ export interface Account {
   balance: number
   currency: string
   colorHex: string
+  sortOrder?: number
   createdAt: Timestamp
 }
 
@@ -18,6 +19,7 @@ export interface AccountBucket {
   accountId: string
   wantId?: string
   isEmergencyFund: boolean
+  sortOrder?: number
   createdAt: Timestamp
 }
 
@@ -59,6 +61,7 @@ export interface Investment {
   broker: string
   currency: string
   notes: string
+  sortOrder?: number
   lastUpdated: Timestamp
   createdAt: Timestamp
 }
@@ -105,15 +108,16 @@ export interface HousingGoal {
 }
 
 export const DEFAULT_EXPENSE_CATEGORIES: Omit<Category, 'id'>[] = [
-  { name: 'Drinks',             icon: '🥤', colorHex: '#0EA5E9', type: 'expense', sortOrder: 0, isDefault: true },
-  { name: 'Beauty and Skincare',icon: '✨', colorHex: '#F472B6', type: 'expense', sortOrder: 1, isDefault: true },
-  { name: 'Mobile Bill',        icon: '📱', colorHex: '#64748B', type: 'expense', sortOrder: 2, isDefault: true },
-  { name: 'Gifts',              icon: '🎁', colorHex: '#F43F5E', type: 'expense', sortOrder: 3, isDefault: true },
-  { name: 'Education',          icon: '📚', colorHex: '#8B5CF6', type: 'expense', sortOrder: 4, isDefault: true },
-  { name: 'Investment',         icon: '📈', colorHex: '#22C55E', type: 'expense', sortOrder: 5, isDefault: true },
-  { name: 'Mutual Funds',       icon: '💹', colorHex: '#10B981', type: 'expense', sortOrder: 6, isDefault: true },
-  { name: 'Subscription',       icon: '🔄', colorHex: '#6366F1', type: 'expense', sortOrder: 7, isDefault: true },
-  { name: 'Others',             icon: '💸', colorHex: '#9CA3AF', type: 'expense', sortOrder: 8, isDefault: true },
+  { name: 'Drinks',             icon: '🥤', colorHex: '#0EA5E9', type: 'expense', sortOrder: 0,  isDefault: true },
+  { name: 'Beauty and Skincare',icon: '✨', colorHex: '#F472B6', type: 'expense', sortOrder: 1,  isDefault: true },
+  { name: 'Mobile Bill',        icon: '📱', colorHex: '#64748B', type: 'expense', sortOrder: 2,  isDefault: true },
+  { name: 'Gifts',              icon: '🎁', colorHex: '#F43F5E', type: 'expense', sortOrder: 3,  isDefault: true },
+  { name: 'Education',          icon: '📚', colorHex: '#8B5CF6', type: 'expense', sortOrder: 4,  isDefault: true },
+  { name: 'Investment',         icon: '📈', colorHex: '#22C55E', type: 'expense', sortOrder: 5,  isDefault: true },
+  { name: 'Mutual Funds',       icon: '💹', colorHex: '#10B981', type: 'expense', sortOrder: 6,  isDefault: true },
+  { name: 'Subscription',       icon: '🔄', colorHex: '#6366F1', type: 'expense', sortOrder: 7,  isDefault: true },
+  { name: 'Gym',                icon: '🏋️', colorHex: '#F97316', type: 'expense', sortOrder: 8,  isDefault: true },
+  { name: 'Others',             icon: '💸', colorHex: '#9CA3AF', type: 'expense', sortOrder: 99, isDefault: true },
 ]
 
 export const DEFAULT_INCOME_CATEGORIES: Omit<Category, 'id'>[] = [

@@ -13,11 +13,23 @@ export function useAccounts() {
   useEffect(() => {
     if (!user) return
     const unsub1 = onSnapshot(query(collection(db, accountsCol(user.uid)), orderBy('createdAt', 'asc')), snap => {
-      setAccounts(snap.docs.map(d => ({ id: d.id, ...d.data() } as Account)))
+      setAccounts(
+        snap.docs
+          .map(d => ({ id: d.id, ...d.data() } as Account))
+          .sort((a, b) => (a.sortOrder ?? Infinity) - (b.sortOrder ?? Infinity))
+      )
       setLoading(false)
     })
     const unsub2 = onSnapshot(query(collection(db, bucketsCol(user.uid)), orderBy('createdAt', 'asc')), snap => {
-      setBuckets(snap.docs.map(d => ({ id: d.id, ...d.data() } as AccountBucket)))
+      setBuckets(
+        snap.docs
+          .map(d => ({ id: d.id, ...d.data() } as AccountBucket))
+          .sort((a, b) => {
+            if (a.isEmergencyFund && !b.isEmergencyFund) return -1
+            if (!a.isEmergencyFund && b.isEmergencyFund) return 1
+            return (a.sortOrder ?? Infinity) - (b.sortOrder ?? Infinity)
+          })
+      )
     })
     return () => { unsub1(); unsub2() }
   }, [user])
@@ -153,8 +165,22 @@ export function useAccounts() {
     await batch.commit()
   }
 
+  const reorderAccounts = async (orderedIds: string[]) => {
+    if (!user) return
+    const batch = writeBatch(db)
+    orderedIds.forEach((id, i) => batch.update(doc(db, accountsCol(user.uid), id), { sortOrder: i }))
+    await batch.commit()
+  }
+
+  const reorderBuckets = async (orderedIds: string[]) => {
+    if (!user) return
+    const batch = writeBatch(db)
+    orderedIds.forEach((id, i) => batch.update(doc(db, bucketsCol(user.uid), id), { sortOrder: i }))
+    await batch.commit()
+  }
+
   const bucketsForAccount = (accountId: string) => buckets.filter(b => b.accountId === accountId)
   const allocatedForAccount = (accountId: string) => bucketsForAccount(accountId).reduce((s, b) => s + b.allocatedAmount, 0)
 
-  return { accounts, buckets, loading, addAccount, updateAccount, deleteAccount, addBucket, updateBucket, deleteBucket, addTransaction, updateTransaction, deleteTransaction, bucketsForAccount, allocatedForAccount }
+  return { accounts, buckets, loading, addAccount, updateAccount, deleteAccount, reorderAccounts, addBucket, updateBucket, deleteBucket, reorderBuckets, addTransaction, updateTransaction, deleteTransaction, bucketsForAccount, allocatedForAccount }
 }

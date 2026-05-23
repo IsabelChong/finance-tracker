@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Plus, X, ChevronRight, Shield, Star, Pencil } from 'lucide-react'
+import { Plus, X, ChevronRight, Shield, Star, Pencil, GripVertical, Check } from 'lucide-react'
 import { useAccounts } from '../hooks/useAccounts'
 import { useWants } from '../hooks/useWants'
 import { useTransactions } from '../hooks/useTransactions'
@@ -10,24 +10,63 @@ type Modal = null | 'addAccount' | { type: 'accountDetail'; account: Account } |
 
 const COLORS = ['#3b82f6','#22c55e','#ef4444','#f59e0b','#8b5cf6','#ec4899','#14b8a6','#f97316']
 
+interface DragState { section: 'bank' | 'credit'; from: number; over: number }
+
 export default function AccountsPage() {
-  const { accounts, buckets, addAccount, updateAccount, deleteAccount, addBucket, updateBucket, deleteBucket, bucketsForAccount, allocatedForAccount } = useAccounts()
+  const { accounts, buckets, addAccount, updateAccount, deleteAccount, reorderAccounts, addBucket, updateBucket, deleteBucket, reorderBuckets, bucketsForAccount, allocatedForAccount } = useAccounts()
   const { wants, updateWant } = useWants()
   const { transactions } = useTransactions()
   const [modal, setModal] = useState<Modal>(null)
+  const [reorderMode, setReorderMode] = useState(false)
+  const [dragState, setDragState] = useState<DragState | null>(null)
 
   const bankAccounts = accounts.filter(a => a.type !== 'credit')
   const creditAccounts = accounts.filter(a => a.type === 'credit')
   const totalSavings = bankAccounts.reduce((s, a) => s + a.balance, 0)
   const totalDebt = creditAccounts.reduce((s, a) => s + a.balance, 0)
 
+  const handleDrop = (section: 'bank' | 'credit', toIdx: number) => {
+    if (!dragState || dragState.section !== section || dragState.from === toIdx) { setDragState(null); return }
+    const items = section === 'bank' ? [...bankAccounts] : [...creditAccounts]
+    const [moved] = items.splice(dragState.from, 1)
+    items.splice(toIdx, 0, moved)
+    reorderAccounts(items.map(a => a.id))
+    setDragState(null)
+  }
+
+  const dragProps = (section: 'bank' | 'credit', idx: number) => reorderMode ? {
+    draggable: true,
+    onDragStart: () => setDragState({ section, from: idx, over: idx }),
+    onDragOver: (e: React.DragEvent) => { e.preventDefault(); setDragState(d => d ? { ...d, over: idx } : null) },
+    onDrop: (e: React.DragEvent) => { e.preventDefault(); handleDrop(section, idx) },
+    onDragEnd: () => setDragState(null),
+  } : {}
+
+  const isDragOver = (section: 'bank' | 'credit', idx: number) =>
+    reorderMode && dragState?.section === section && dragState.over === idx && dragState.from !== idx
+
+  const isDragging = (section: 'bank' | 'credit', idx: number) =>
+    reorderMode && dragState?.section === section && dragState.from === idx
+
   return (
     <div className="p-4 lg:p-6 space-y-5 max-w-3xl mx-auto">
       <div className="flex items-center justify-between pt-2">
         <h1 className="text-xl font-bold">Accounts</h1>
-        <button onClick={() => setModal('addAccount')} className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold px-4 py-2 rounded-xl transition-colors">
-          <Plus size={16} /> Add
-        </button>
+        <div className="flex gap-2">
+          {accounts.length > 1 && (
+            <button
+              onClick={() => { setReorderMode(r => !r); setDragState(null) }}
+              className={`flex items-center gap-1.5 text-sm font-semibold px-3 py-2 rounded-xl transition-colors ${reorderMode ? 'bg-green-600 hover:bg-green-700 text-white' : 'bg-slate-700 hover:bg-slate-600 text-white'}`}
+            >
+              {reorderMode ? <><Check size={14} /> Done</> : <><GripVertical size={14} /> Reorder</>}
+            </button>
+          )}
+          {!reorderMode && (
+            <button onClick={() => setModal('addAccount')} className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold px-4 py-2 rounded-xl transition-colors">
+              <Plus size={16} /> Add
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Summary */}
@@ -44,13 +83,45 @@ export default function AccountsPage() {
 
       {bankAccounts.length > 0 && (
         <Section title="Bank Accounts">
-          {bankAccounts.map(acc => <AccountRow key={acc.id} account={acc} allocated={allocatedForAccount(acc.id)} onClick={() => setModal({ type: 'accountDetail', account: acc })} />)}
+          {bankAccounts.map((acc, i) => (
+            <div
+              key={acc.id}
+              {...dragProps('bank', i)}
+              className={[
+                isDragOver('bank', i) ? 'border-t-2 border-blue-500' : '',
+                isDragging('bank', i) ? 'opacity-40' : '',
+              ].join(' ')}
+            >
+              <AccountRow
+                account={acc}
+                allocated={allocatedForAccount(acc.id)}
+                onClick={() => !reorderMode && setModal({ type: 'accountDetail', account: acc })}
+                reorderMode={reorderMode}
+              />
+            </div>
+          ))}
         </Section>
       )}
 
       {creditAccounts.length > 0 && (
         <Section title="Credit Cards">
-          {creditAccounts.map(acc => <AccountRow key={acc.id} account={acc} allocated={0} onClick={() => setModal({ type: 'accountDetail', account: acc })} />)}
+          {creditAccounts.map((acc, i) => (
+            <div
+              key={acc.id}
+              {...dragProps('credit', i)}
+              className={[
+                isDragOver('credit', i) ? 'border-t-2 border-blue-500' : '',
+                isDragging('credit', i) ? 'opacity-40' : '',
+              ].join(' ')}
+            >
+              <AccountRow
+                account={acc}
+                allocated={0}
+                onClick={() => !reorderMode && setModal({ type: 'accountDetail', account: acc })}
+                reorderMode={reorderMode}
+              />
+            </div>
+          ))}
         </Section>
       )}
 
@@ -74,6 +145,7 @@ export default function AccountsPage() {
           onAddBucket={() => setModal({ type: 'addBucket', account: modal.account })}
           onUpdateBucket={updateBucket}
           onDeleteBucket={deleteBucket}
+          onReorderBuckets={reorderBuckets}
           onReconcile={(id, bal) => updateAccount(id, { balance: bal })}
           onDelete={async (id) => { await deleteAccount(id); setModal(null) }}
         />
@@ -103,9 +175,19 @@ function Section({ title, children }: { title: string; children: React.ReactNode
   )
 }
 
-function AccountRow({ account, allocated, onClick }: { account: Account; allocated: number; onClick: () => void }) {
+function AccountRow({ account, allocated, onClick, reorderMode }: {
+  account: Account; allocated: number
+  onClick: () => void
+  reorderMode?: boolean
+}) {
   return (
-    <button onClick={onClick} className="flex items-center gap-4 px-4 py-4 w-full text-left hover:bg-slate-800/50 transition-colors rounded-xl">
+    <div
+      onClick={onClick}
+      className={`flex items-center gap-4 px-4 py-4 w-full text-left transition-colors rounded-xl ${reorderMode ? 'cursor-grab active:cursor-grabbing' : 'hover:bg-slate-800/50 cursor-pointer'}`}
+    >
+      {reorderMode
+        ? <GripVertical size={16} className="text-slate-500 shrink-0" />
+        : null}
       <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0" style={{ background: account.colorHex + '22' }}>
         <span className="text-xl">{account.type === 'credit' ? '💳' : '🏦'}</span>
       </div>
@@ -120,23 +202,47 @@ function AccountRow({ account, allocated, onClick }: { account: Account; allocat
         <p className={`font-bold ${account.type === 'credit' ? 'text-red-400' : ''}`}>{formatCurrency(account.balance)}</p>
         {account.type === 'credit' && <p className="text-xs text-red-400">owed</p>}
       </div>
-      <ChevronRight size={16} className="text-slate-600" />
-    </button>
+      {!reorderMode && <ChevronRight size={16} className="text-slate-600" />}
+    </div>
   )
 }
 
-function AccountDetailModal({ account, buckets, transactions, wants, onClose, onAddBucket, onUpdateBucket, onDeleteBucket, onReconcile, onDelete }: {
+function AccountDetailModal({ account, buckets, transactions, wants, onClose, onAddBucket, onUpdateBucket, onDeleteBucket, onReorderBuckets, onReconcile, onDelete }: {
   account: Account; buckets: AccountBucket[]; transactions: any[]; wants: any[]
   onClose: () => void; onAddBucket: () => void
   onUpdateBucket: (id: string, d: Partial<AccountBucket>) => void
   onDeleteBucket: (id: string) => void
+  onReorderBuckets: (ids: string[]) => void
   onReconcile: (id: string, balance: number) => void
   onDelete: (id: string) => void
 }) {
   const [reconcile, setReconcile] = useState('')
   const [showReconcile, setShowReconcile] = useState(false)
+  const [bucketReorder, setBucketReorder] = useState(false)
+  const [bucketDrag, setBucketDrag] = useState<{ from: number; over: number } | null>(null)
+
   const allocated = buckets.reduce((s, b) => s + b.allocatedAmount, 0)
   const unallocated = account.balance - allocated
+
+  const emergencyBuckets = buckets.filter(b => b.isEmergencyFund)
+  const regularBuckets = buckets.filter(b => !b.isEmergencyFund)
+
+  const dropBucket = (toIdx: number) => {
+    if (!bucketDrag || bucketDrag.from === toIdx) { setBucketDrag(null); return }
+    const items = [...regularBuckets]
+    const [moved] = items.splice(bucketDrag.from, 1)
+    items.splice(toIdx, 0, moved)
+    onReorderBuckets(items.map(b => b.id))
+    setBucketDrag(null)
+  }
+
+  const bucketDragProps = (idx: number) => bucketReorder ? {
+    draggable: true,
+    onDragStart: () => setBucketDrag({ from: idx, over: idx }),
+    onDragOver: (e: React.DragEvent) => { e.preventDefault(); setBucketDrag(d => d ? { ...d, over: idx } : null) },
+    onDrop: (e: React.DragEvent) => { e.preventDefault(); dropBucket(idx) },
+    onDragEnd: () => setBucketDrag(null),
+  } : {}
 
   return (
     <div className="fixed inset-0 bg-black/70 z-50 flex items-end lg:items-center justify-center" onClick={onClose}>
@@ -174,39 +280,46 @@ function AccountDetailModal({ account, buckets, transactions, wants, onClose, on
             <div>
               <div className="flex items-center justify-between mb-3">
                 <h3 className="text-sm font-semibold text-slate-300">Buckets</h3>
-                <button onClick={onAddBucket} className="text-xs text-blue-400 hover:text-blue-300 flex items-center gap-1"><Plus size={12} /> Add bucket</button>
+                <div className="flex items-center gap-2">
+                  {regularBuckets.length > 1 && (
+                    <button
+                      onClick={() => { setBucketReorder(r => !r); setBucketDrag(null) }}
+                      className={`flex items-center gap-1 text-xs font-semibold px-2.5 py-1 rounded-lg transition-colors ${bucketReorder ? 'bg-green-600 text-white' : 'bg-slate-700 text-slate-300 hover:text-white'}`}
+                    >
+                      {bucketReorder ? <><Check size={11} /> Done</> : <><GripVertical size={11} /> Reorder</>}
+                    </button>
+                  )}
+                  {!bucketReorder && (
+                    <button onClick={onAddBucket} className="text-xs text-blue-400 hover:text-blue-300 flex items-center gap-1"><Plus size={12} /> Add bucket</button>
+                  )}
+                </div>
               </div>
               {buckets.length === 0 ? (
                 <p className="text-xs text-slate-500 text-center py-4">No buckets — add one to allocate savings</p>
               ) : (
                 <div className="space-y-2">
-                  {buckets.map(b => {
-                    const want = wants.find(w => w.bucketId === b.id || w.id === b.wantId)
-                    const pct = want ? Math.min(100, (b.allocatedAmount / want.targetAmount) * 100) : 0
-                    return (
-                      <div key={b.id} className="bg-slate-800 rounded-xl p-3">
-                        <div className="flex items-center justify-between mb-1">
-                          <div className="flex items-center gap-2">
-                            {b.isEmergencyFund && <Shield size={12} className="text-orange-400" />}
-                            {want && <Star size={12} className="text-purple-400" />}
-                            <span className="text-sm font-medium">{b.name}</span>
-                          </div>
-                          <div className="flex items-center gap-3">
-                            <BucketAmountEditor bucket={b} onUpdate={onUpdateBucket} />
-                            <button onClick={() => onDeleteBucket(b.id)} className="text-slate-600 hover:text-red-400"><X size={14} /></button>
-                          </div>
-                        </div>
-                        {want && (
-                          <div className="mt-1.5">
-                            <div className="h-1.5 bg-slate-700 rounded-full overflow-hidden">
-                              <div className="h-full bg-purple-500 rounded-full transition-all" style={{ width: `${pct}%` }} />
-                            </div>
-                            <p className="text-xs text-slate-500 mt-0.5">{pct.toFixed(0)}% of {formatCurrency(want.targetAmount)} goal</p>
-                          </div>
-                        )}
-                      </div>
-                    )
-                  })}
+                  {/* Emergency fund — always first, pinned */}
+                  {emergencyBuckets.map(b => (
+                    <BucketItem key={b.id} bucket={b} wants={wants} pinned onUpdate={onUpdateBucket} onDelete={onDeleteBucket} />
+                  ))}
+
+                  {/* Regular buckets — reorderable */}
+                  {regularBuckets.map((b, i) => (
+                    <div
+                      key={b.id}
+                      {...bucketDragProps(i)}
+                      className={[
+                        bucketReorder && bucketDrag?.over === i && bucketDrag.from !== i ? 'border-t-2 border-blue-500 rounded-xl' : '',
+                        bucketReorder && bucketDrag?.from === i ? 'opacity-40' : '',
+                      ].join(' ')}
+                    >
+                      <BucketItem
+                        bucket={b} wants={wants} reorderMode={bucketReorder}
+                        onUpdate={onUpdateBucket} onDelete={onDeleteBucket}
+                      />
+                    </div>
+                  ))}
+
                   <div className="flex justify-between text-sm px-1 pt-1 border-t border-slate-800">
                     <span className="text-slate-400">Unallocated</span>
                     <span className={`font-semibold ${unallocated < 0 ? 'text-red-400' : 'text-green-400'}`}>{formatCurrency(unallocated)}</span>
@@ -245,6 +358,43 @@ function AccountDetailModal({ account, buckets, transactions, wants, onClose, on
           </button>
         </div>
       </div>
+    </div>
+  )
+}
+
+function BucketItem({ bucket, wants, pinned, reorderMode, onUpdate, onDelete }: {
+  bucket: AccountBucket; wants: any[]
+  pinned?: boolean
+  reorderMode?: boolean
+  onUpdate: (id: string, d: Partial<AccountBucket>) => void
+  onDelete: (id: string) => void
+}) {
+  const want = wants.find(w => w.bucketId === bucket.id || w.id === bucket.wantId)
+  const pct = want ? Math.min(100, (bucket.allocatedAmount / want.targetAmount) * 100) : 0
+  return (
+    <div className="bg-slate-800 rounded-xl p-3">
+      <div className="flex items-center justify-between mb-1">
+        <div className="flex items-center gap-2">
+          {reorderMode && <GripVertical size={14} className="text-slate-500 cursor-grab" />}
+          {pinned && <Shield size={12} className="text-orange-400" />}
+          {!reorderMode && bucket.isEmergencyFund && <Shield size={12} className="text-orange-400" />}
+          {want && <Star size={12} className="text-purple-400" />}
+          <span className="text-sm font-medium">{bucket.name}</span>
+          {pinned && <span className="text-xs text-orange-400 bg-orange-400/10 px-1.5 py-0.5 rounded font-medium">Priority</span>}
+        </div>
+        <div className="flex items-center gap-3">
+          <BucketAmountEditor bucket={bucket} onUpdate={onUpdate} />
+          {!reorderMode && <button onClick={() => onDelete(bucket.id)} className="text-slate-600 hover:text-red-400"><X size={14} /></button>}
+        </div>
+      </div>
+      {want && (
+        <div className="mt-1.5">
+          <div className="h-1.5 bg-slate-700 rounded-full overflow-hidden">
+            <div className="h-full bg-purple-500 rounded-full transition-all" style={{ width: `${pct}%` }} />
+          </div>
+          <p className="text-xs text-slate-500 mt-0.5">{pct.toFixed(0)}% of {formatCurrency(want.targetAmount)} goal</p>
+        </div>
+      )}
     </div>
   )
 }

@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Plus, X, RefreshCw, TrendingUp, TrendingDown, ChevronDown, ChevronRight, ArrowDownToLine, Pencil } from 'lucide-react'
+import { Plus, X, RefreshCw, TrendingUp, TrendingDown, ChevronDown, ChevronRight, ArrowDownToLine, Pencil, GripVertical, Check } from 'lucide-react'
 import { Account } from '../types'
 import DatePicker from '../components/DatePicker'
 import { useInvestments } from '../hooks/useInvestments'
@@ -40,11 +40,15 @@ function groupByTicker(investments: Investment[], toSGD: (amount: number, curren
     const gainLossPct = totalCost > 0 ? (gainLoss / totalCost) * 100 : 0
     const name = lots.find(l => l.name)?.name ?? ''
     return { ticker, name, currency, lots, totalShares, totalCost, totalValue, totalValueSGD, weightedAvgCost, gainLoss, gainLossPct }
+  }).sort((a, b) => {
+    const sa = Math.min(...a.lots.map(l => l.sortOrder ?? 999999))
+    const sb = Math.min(...b.lots.map(l => l.sortOrder ?? 999999))
+    return sa - sb
   })
 }
 
 export default function InvestmentsPage() {
-  const { investments, addInvestment, updateInvestment, deleteInvestment, updatePricesByTicker, totalCostSGD, totalValueSGD, totalGainLossSGD, totalGainLossPct } = useInvestments()
+  const { investments, addInvestment, updateInvestment, deleteInvestment, updatePricesByTicker, reorderInvestmentGroups, totalCostSGD, totalValueSGD, totalGainLossSGD, totalGainLossPct } = useInvestments()
   const { accounts, addTransaction } = useAccounts()
   const { rates, updateRate, toSGD } = useFXRates()
   const [showAdd, setShowAdd] = useState(false)
@@ -54,8 +58,19 @@ export default function InvestmentsPage() {
   const [expandedTickers, setExpandedTickers] = useState<Set<string>>(new Set())
   const [editingFX, setEditingFX] = useState(false)
   const [fxDraft, setFxDraft] = useState<Record<string, string>>({})
+  const [reorderMode, setReorderMode] = useState(false)
+  const [dragState, setDragState] = useState<{ from: number; over: number } | null>(null)
 
   const groups = groupByTicker(investments, toSGD)
+
+  const handleGroupDrop = (toIdx: number) => {
+    if (!dragState || dragState.from === toIdx) { setDragState(null); return }
+    const reordered = [...groups]
+    const [moved] = reordered.splice(dragState.from, 1)
+    reordered.splice(toIdx, 0, moved)
+    reorderInvestmentGroups(reordered.map(g => g.ticker))
+    setDragState(null)
+  }
 
   const FX_CURRENCIES = ['USD', 'HKD', 'GBP', 'EUR']
 
@@ -84,14 +99,24 @@ export default function InvestmentsPage() {
       <div className="flex items-center justify-between pt-2">
         <h1 className="text-xl font-bold">Investments</h1>
         <div className="flex gap-2">
-          {groups.length > 0 && (
+          {groups.length > 1 && (
+            <button
+              onClick={() => { setReorderMode(r => !r); setDragState(null) }}
+              className={`flex items-center gap-1.5 text-sm font-semibold px-3 py-2 rounded-xl transition-colors ${reorderMode ? 'bg-green-600 hover:bg-green-700 text-white' : 'bg-slate-700 hover:bg-slate-600 text-white'}`}
+            >
+              {reorderMode ? <><Check size={14} /> Done</> : <><GripVertical size={14} /> Reorder</>}
+            </button>
+          )}
+          {!reorderMode && groups.length > 0 && (
             <button onClick={() => setShowUpdatePrices(true)} className="flex items-center gap-2 bg-slate-700 hover:bg-slate-600 text-white text-sm font-semibold px-4 py-2 rounded-xl transition-colors">
               <RefreshCw size={15} /> Update Prices
             </button>
           )}
-          <button onClick={() => setShowAdd(true)} className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold px-4 py-2 rounded-xl transition-colors">
-            <Plus size={16} /> Add
-          </button>
+          {!reorderMode && (
+            <button onClick={() => setShowAdd(true)} className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold px-4 py-2 rounded-xl transition-colors">
+              <Plus size={16} /> Add
+            </button>
+          )}
         </div>
       </div>
 
@@ -157,16 +182,31 @@ export default function InvestmentsPage() {
         </div>
       ) : (
         <div className="space-y-2">
-          {groups.map(group => {
+          {groups.map((group, gi) => {
             const expanded = expandedTickers.has(group.ticker)
             const multipleLots = group.lots.length > 1
+            const isDraggedOver = reorderMode && dragState?.over === gi && dragState.from !== gi
+            const isDragging = reorderMode && dragState?.from === gi
             return (
-              <div key={group.ticker} className="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden">
+              <div
+                key={group.ticker}
+                draggable={reorderMode}
+                onDragStart={reorderMode ? () => setDragState({ from: gi, over: gi }) : undefined}
+                onDragOver={reorderMode ? (e) => { e.preventDefault(); setDragState(d => d ? { ...d, over: gi } : null) } : undefined}
+                onDrop={reorderMode ? (e) => { e.preventDefault(); handleGroupDrop(gi) } : undefined}
+                onDragEnd={() => setDragState(null)}
+                className={[
+                  'bg-slate-900 border border-slate-800 rounded-xl overflow-hidden',
+                  isDraggedOver ? 'border-t-2 border-t-blue-500' : '',
+                  isDragging ? 'opacity-40' : '',
+                ].join(' ')}
+              >
                 {/* Ticker summary row */}
                 <button
-                  onClick={() => multipleLots ? toggleTicker(group.ticker) : setSelected(group.lots[0])}
+                  onClick={() => { if (reorderMode) return; multipleLots ? toggleTicker(group.ticker) : setSelected(group.lots[0]) }}
                   className="flex items-center gap-4 px-4 py-4 w-full text-left hover:bg-slate-800/50 transition-colors"
                 >
+                  {reorderMode && <GripVertical size={16} className="text-slate-500 shrink-0 -ml-1 cursor-grab" />}
                   <div className="w-10 h-10 bg-slate-800 rounded-xl flex items-center justify-center shrink-0">
                     <span className="text-xs font-bold text-purple-400">{group.ticker.slice(0, 4)}</span>
                   </div>
@@ -193,7 +233,7 @@ export default function InvestmentsPage() {
                       {group.gainLoss >= 0 ? '+' : ''}{formatWithCurrency(group.gainLoss, group.currency)} ({formatPercent(group.gainLossPct)})
                     </p>
                   </div>
-                  {multipleLots && (
+                  {multipleLots && !reorderMode && (
                     <div className="ml-1 text-slate-500">
                       {expanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
                     </div>

@@ -47,10 +47,21 @@ export function useInvestments() {
     await batch.commit()
   }
 
+  const reorderInvestmentGroups = async (orderedTickers: string[]) => {
+    if (!user) return
+    const batch = writeBatch(db)
+    orderedTickers.forEach((ticker, i) => {
+      for (const inv of investments.filter(l => l.ticker === ticker)) {
+        batch.update(doc(db, investmentsCol(user.uid), inv.id), { sortOrder: i * 10 })
+      }
+    })
+    await batch.commit()
+  }
+
   const totalCostSGD  = investments.reduce((s, i) => s + toSGD(i.shares * i.purchasePrice, i.currency), 0)
   const totalValueSGD = investments.reduce((s, i) => s + toSGD(i.shares * i.currentPrice,  i.currency), 0)
   const totalGainLossSGD = totalValueSGD - totalCostSGD
   const totalGainLossPct = totalCostSGD > 0 ? (totalGainLossSGD / totalCostSGD) * 100 : 0
 
-  return { investments, loading, addInvestment, updateInvestment, deleteInvestment, updatePricesByTicker, totalCostSGD, totalValueSGD, totalGainLossSGD, totalGainLossPct }
+  return { investments, loading, addInvestment, updateInvestment, deleteInvestment, updatePricesByTicker, reorderInvestmentGroups, totalCostSGD, totalValueSGD, totalGainLossSGD, totalGainLossPct }
 }
