@@ -117,6 +117,7 @@ export default function DashboardPage() {
           month={month} isCurrentMonth={isCurrentMonth}
           onPrev={() => setMonth(addMonths(month, -1))}
           onNext={() => setMonth(addMonths(month,  1))}
+          onSelectMonth={setMonth}
           transactions={transactions}
           forMonth={forMonth} income={income} expenses={expenses} catTotals={catTotals}
         />
@@ -163,24 +164,69 @@ export default function DashboardPage() {
 
 // ─── Month Tab ───────────────────────────────────────────────────────────────
 
-function MonthTab({ month, isCurrentMonth, onPrev, onNext, transactions, forMonth, income, expenses, catTotals }: {
+function MonthPickerPopover({ selected, onSelect }: { selected: Date; onSelect: (d: Date) => void }) {
+  const today = new Date()
+  const [pickerYear, setPickerYear] = useState(selected.getFullYear())
+  const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
+
+  const isDisabled = (mi: number) =>
+    pickerYear > today.getFullYear() ||
+    (pickerYear === today.getFullYear() && mi > today.getMonth())
+
+  const isSelected = (mi: number) =>
+    pickerYear === selected.getFullYear() && mi === selected.getMonth()
+
+  return (
+    <div className="absolute z-30 top-full mt-2 left-1/2 -translate-x-1/2 bg-slate-800 border border-slate-700 rounded-2xl p-4 shadow-2xl w-64">
+      <div className="flex items-center justify-between mb-3">
+        <button onClick={() => setPickerYear(y => y - 1)} className="p-1 text-slate-400 hover:text-white transition-colors">
+          <ChevronLeft size={18} />
+        </button>
+        <span className="font-bold text-sm">{pickerYear}</span>
+        <button onClick={() => setPickerYear(y => y + 1)} disabled={pickerYear >= today.getFullYear()}
+          className="p-1 text-slate-400 hover:text-white disabled:opacity-30 transition-colors">
+          <ChevronRight size={18} />
+        </button>
+      </div>
+      <div className="grid grid-cols-3 gap-1.5">
+        {MONTHS.map((m, i) => {
+          const disabled = isDisabled(i)
+          const sel = isSelected(i)
+          return (
+            <button key={m} disabled={disabled}
+              onClick={() => onSelect(new Date(pickerYear, i, 1))}
+              className={`py-2 rounded-xl text-sm font-medium transition-colors ${
+                sel      ? 'bg-blue-600 text-white' :
+                disabled ? 'text-slate-600 cursor-not-allowed' :
+                           'text-slate-300 hover:bg-slate-700 hover:text-white'
+              }`}>
+              {m}
+            </button>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
+function MonthTab({ month, isCurrentMonth, onPrev, onNext, onSelectMonth, transactions, forMonth, income, expenses, catTotals }: {
   month: Date; isCurrentMonth: boolean
-  onPrev: () => void; onNext: () => void
+  onPrev: () => void; onNext: () => void; onSelectMonth: (d: Date) => void
   transactions: Transaction[]
   forMonth: (m: Date) => Transaction[]
   income: (txs: Transaction[]) => number
   expenses: (txs: Transaction[]) => number
   catTotals: (txs: Transaction[]) => { name: string; amount: number; color: string; icon: string }[]
 }) {
+  const [showPicker, setShowPicker] = useState(false)
+
   const txs     = forMonth(month)
   const inc     = income(txs)
   const exp     = expenses(txs)
   const saved   = inc - exp
   const savingsRate = inc > 0 ? Math.min(100, Math.max(0, (saved / inc) * 100)) : 0
   const cats    = catTotals(txs)
-  const recent  = txs.slice(0, 8)
 
-  // group recent by day for display
   const grouped: { dateStr: string; dayTxs: Transaction[] }[] = []
   const seen = new Set<string>()
   for (const tx of txs) {
@@ -197,7 +243,18 @@ function MonthTab({ month, isCurrentMonth, onPrev, onNext, transactions, forMont
       {/* Month picker */}
       <div className="flex items-center justify-between bg-slate-900 border border-slate-800 rounded-xl px-4 py-3">
         <button onClick={onPrev} className="text-slate-400 hover:text-white p-1 transition-colors"><ChevronLeft size={20} /></button>
-        <span className="font-semibold">{monthLabel(month)}</span>
+        <div className="relative">
+          <button onClick={() => setShowPicker(p => !p)}
+            className="font-semibold hover:text-blue-400 transition-colors px-2 py-1 rounded-lg hover:bg-slate-800">
+            {monthLabel(month)}
+          </button>
+          {showPicker && (
+            <MonthPickerPopover
+              selected={month}
+              onSelect={d => { onSelectMonth(d); setShowPicker(false) }}
+            />
+          )}
+        </div>
         <button onClick={onNext} disabled={isCurrentMonth} className="text-slate-400 hover:text-white disabled:opacity-30 p-1 transition-colors"><ChevronRight size={20} /></button>
       </div>
 
@@ -238,7 +295,7 @@ function MonthTab({ month, isCurrentMonth, onPrev, onNext, transactions, forMont
               <Pie data={cats} dataKey="amount" nameKey="name" cx="50%" cy="50%" innerRadius={55} outerRadius={90} paddingAngle={2}>
                 {cats.map((_, i) => <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />)}
               </Pie>
-              <Tooltip formatter={(v: number) => formatCurrency(v)} contentStyle={{ background: '#1e293b', border: '1px solid #334155', borderRadius: 10, fontSize: 12 }} />
+              <Tooltip formatter={(v: number) => formatCurrency(v)} contentStyle={{ background: '#1e293b', border: '1px solid #334155', borderRadius: 10, fontSize: 12, color: '#f1f5f9' }} />
             </PieChart>
           </ResponsiveContainer>
 
@@ -375,7 +432,7 @@ function YearTab({ yearlyMonths, income, expenses, transactions, catTotals }: {
             <YAxis tick={{ fill: '#64748b', fontSize: 10 }} axisLine={false} tickLine={false} tickFormatter={v => v >= 1000 ? `${(v/1000).toFixed(0)}k` : String(v)} width={36} />
             <Tooltip
               formatter={(v: number, name: string) => [formatCurrency(v), name === 'income' ? 'Income' : 'Expenses']}
-              contentStyle={{ background: '#1e293b', border: '1px solid #334155', borderRadius: 10, fontSize: 12 }}
+              contentStyle={{ background: '#1e293b', border: '1px solid #334155', borderRadius: 10, fontSize: 12, color: '#f1f5f9' }}
             />
             <Bar dataKey="income" fill="#22c55e" radius={[4, 4, 0, 0]} />
             <Bar dataKey="expenses" fill="#ef4444" radius={[4, 4, 0, 0]} />
@@ -472,7 +529,7 @@ function AllTimeTab({ transactions, accounts, investments, totalValue, totalCost
               <Pie data={netWorthPie} dataKey="value" nameKey="name" cx="50%" cy="50%" innerRadius={55} outerRadius={90} paddingAngle={2}>
                 {netWorthPie.map((d, i) => <Cell key={i} fill={d.color} />)}
               </Pie>
-              <Tooltip formatter={(v: number) => formatCurrency(v)} contentStyle={{ background: '#1e293b', border: '1px solid #334155', borderRadius: 10, fontSize: 12 }} />
+              <Tooltip formatter={(v: number) => formatCurrency(v)} contentStyle={{ background: '#1e293b', border: '1px solid #334155', borderRadius: 10, fontSize: 12, color: '#f1f5f9' }} />
             </PieChart>
           </ResponsiveContainer>
           <div className="flex gap-4 justify-center mt-1">
