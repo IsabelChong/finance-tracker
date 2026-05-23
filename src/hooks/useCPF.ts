@@ -33,12 +33,14 @@ export function useCPF() {
 
   const addHousingGoal = async (data: Omit<HousingGoal, 'id' | 'createdAt'>) => {
     if (!user) return
-    await addDoc(collection(db, housingGoalsCol(user.uid)), { ...data, createdAt: serverTimestamp() })
+    const payload = Object.fromEntries(Object.entries({ ...data, createdAt: serverTimestamp() }).filter(([, v]) => v !== undefined))
+    await addDoc(collection(db, housingGoalsCol(user.uid)), payload)
   }
 
   const updateHousingGoal = async (id: string, data: Partial<Omit<HousingGoal, 'id' | 'createdAt'>>) => {
     if (!user) return
-    await updateDoc(doc(db, housingGoalsCol(user.uid), id), data as Record<string, unknown>)
+    const payload = Object.fromEntries(Object.entries(data).filter(([, v]) => v !== undefined))
+    await updateDoc(doc(db, housingGoalsCol(user.uid), id), payload as Record<string, unknown>)
   }
 
   const deleteHousingGoal = async (id: string) => {

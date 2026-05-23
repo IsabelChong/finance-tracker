@@ -7,6 +7,15 @@ import { formatCurrency, formatDate } from '../lib/utils'
 
 type AccountKey = 'ordinary' | 'special' | 'medisave'
 
+function LegendDot({ color, label }: { color: string; label: string }) {
+  return (
+    <div className="flex items-center gap-1 text-xs text-slate-400">
+      <span className="w-2 h-2 rounded-full shrink-0" style={{ background: color }} />
+      {label}
+    </div>
+  )
+}
+
 const CPF_ACCOUNTS: { key: AccountKey; label: string; short: string; desc: string; rate: number; rateStr: string; color: string }[] = [
   { key: 'ordinary', label: 'Ordinary Account', short: 'OA', desc: 'For housing, education & investments', rate: 0.025, rateStr: '2.5%', color: '#3b82f6' },
   { key: 'special',  label: 'Special Account',  short: 'SA', desc: 'For retirement savings',               rate: 0.04,  rateStr: '4%',   color: '#8b5cf6' },
@@ -18,6 +27,13 @@ function tsToDate(ts: Timestamp | undefined): Date | null {
   return ts.toDate ? ts.toDate() : new Date(ts as any)
 }
 
+const GRANTS = [
+  { key: 'grantEHG',        label: 'Enhanced CPF Housing Grant (EHG)',  max: 120000, desc: 'Up to $120,000 for first-timers (income-based). BTO or resale.' },
+  { key: 'grantCPFHousing', label: 'CPF Housing Grant (Family Grant)',   max: 80000,  desc: 'Up to $80,000 for first-timers buying resale. Income-based.' },
+  { key: 'grantProximity',  label: 'Proximity Housing Grant (PHG)',      max: 30000,  desc: 'Up to $30,000 for buying near/with parents or children. Resale only.' },
+  { key: 'grantStepUp',     label: 'Step-Up CPF Housing Grant',          max: 15000,  desc: '$15,000 for second-timers moving from 2-room or 3-room flat.' },
+] as const
+
 // ─── Housing Goal Modal ───────────────────────────────────────────────────────
 
 function HousingGoalModal({ goal, oaBalance, onSave, onClose }: {
@@ -26,34 +42,59 @@ function HousingGoalModal({ goal, oaBalance, onSave, onClose }: {
   onSave: (data: Omit<HousingGoal, 'id' | 'createdAt'>) => Promise<void>
   onClose: () => void
 }) {
-  const [name, setName]             = useState(goal?.name ?? '')
+  const [name, setName]               = useState(goal?.name ?? '')
   const [targetPrice, setTargetPrice] = useState(goal ? String(goal.targetPrice) : '')
-  const [oaPlanned, setOaPlanned]   = useState(goal ? String(goal.cpfOAPlanned) : '')
-  const [cashDP, setCashDP]         = useState(goal ? String(goal.cashDownPayment) : '')
-  const [targetDate, setTargetDate] = useState(
+  const [oaPlanned, setOaPlanned]     = useState(goal ? String(goal.cpfOAPlanned) : '')
+  const [cashDP, setCashDP]           = useState(goal ? String(goal.cashDownPayment) : '')
+  const [grantEHG, setGrantEHG]               = useState(goal?.grantEHG ? String(goal.grantEHG) : '')
+  const [grantCPFHousing, setGrantCPFHousing] = useState(goal?.grantCPFHousing ? String(goal.grantCPFHousing) : '')
+  const [grantProximity, setGrantProximity]   = useState(goal?.grantProximity ? String(goal.grantProximity) : '')
+  const [grantStepUp, setGrantStepUp]         = useState(goal?.grantStepUp ? String(goal.grantStepUp) : '')
+  const [targetDate, setTargetDate]   = useState(
     goal?.targetDate ? tsToDate(goal.targetDate)?.toISOString().split('T')[0] ?? '' : ''
   )
-  const [notes, setNotes]           = useState(goal?.notes ?? '')
-  const [saving, setSaving]         = useState(false)
+  const [notes, setNotes]   = useState(goal?.notes ?? '')
+  const [saving, setSaving] = useState(false)
+
+  const grantSetters: Record<string, React.Dispatch<React.SetStateAction<string>>> = {
+    grantEHG: setGrantEHG, grantCPFHousing: setGrantCPFHousing,
+    grantProximity: setGrantProximity, grantStepUp: setGrantStepUp,
+  }
+  const grantValues: Record<string, string> = {
+    grantEHG, grantCPFHousing, grantProximity, grantStepUp,
+  }
+
+  const totalGrants  = [grantEHG, grantCPFHousing, grantProximity, grantStepUp].reduce((s, v) => s + (parseFloat(v) || 0), 0)
+  const price        = parseFloat(targetPrice) || 0
+  const oa           = parseFloat(oaPlanned) || 0
+  const cash         = parseFloat(cashDP) || 0
+  const afterGrants  = Math.max(0, price - totalGrants)
+  const loanNeeded   = Math.max(0, afterGrants - oa - cash)
 
   const handleSave = async () => {
     if (!name || !targetPrice) return
     setSaving(true)
     await onSave({
       name,
-      targetPrice: parseFloat(targetPrice) || 0,
-      cpfOAPlanned: parseFloat(oaPlanned) || 0,
-      cashDownPayment: parseFloat(cashDP) || 0,
+      targetPrice: price,
+      cpfOAPlanned: oa,
+      cashDownPayment: cash,
+      grantEHG: parseFloat(grantEHG) || undefined,
+      grantCPFHousing: parseFloat(grantCPFHousing) || undefined,
+      grantProximity: parseFloat(grantProximity) || undefined,
+      grantStepUp: parseFloat(grantStepUp) || undefined,
       targetDate: targetDate ? Timestamp.fromDate(new Date(targetDate)) : undefined,
       notes,
     })
     onClose()
   }
 
+  const numInput = 'w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-blue-500'
+
   return (
     <div className="fixed inset-0 bg-black/60 z-50 flex items-end lg:items-center justify-center p-4">
-      <div className="bg-slate-900 border border-slate-700 rounded-2xl w-full max-w-md p-5 space-y-4">
-        <div className="flex items-center justify-between">
+      <div className="bg-slate-900 border border-slate-700 rounded-2xl w-full max-w-md max-h-[92vh] overflow-y-auto p-5 space-y-4">
+        <div className="flex items-center justify-between sticky top-0 bg-slate-900 pb-1">
           <h2 className="font-bold text-lg">{goal ? 'Edit Goal' : 'Add Housing Goal'}</h2>
           <button onClick={onClose} className="text-slate-400 hover:text-white"><X size={20} /></button>
         </div>
@@ -62,34 +103,81 @@ function HousingGoalModal({ goal, oaBalance, onSave, onClose }: {
           <div>
             <label className="text-xs text-slate-400 mb-1 block">Goal name</label>
             <input value={name} onChange={e => setName(e.target.value)} placeholder="e.g. BTO in Woodlands"
-              className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-blue-500" />
+              className={numInput} />
           </div>
           <div>
             <label className="text-xs text-slate-400 mb-1 block">Target property price (SGD)</label>
             <input value={targetPrice} onChange={e => setTargetPrice(e.target.value)} type="number" placeholder="450000"
-              className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-blue-500" />
+              onKeyDown={e => ['e','E','+','-'].includes(e.key) && e.preventDefault()}
+              className={numInput} />
           </div>
+
+          {/* Grants section */}
+          <div className="bg-slate-800/50 rounded-2xl p-3 space-y-3">
+            <div className="flex items-center gap-2">
+              <p className="text-xs font-semibold text-green-400">HDB Grants</p>
+              <p className="text-xs text-slate-500">— all credited to your CPF OA</p>
+            </div>
+            {GRANTS.map(g => (
+              <div key={g.key}>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="text-xs text-slate-300 font-medium">{g.label}</label>
+                  <span className="text-xs text-slate-500">max {formatCurrency(g.max)}</span>
+                </div>
+                <p className="text-xs text-slate-500 mb-1.5">{g.desc}</p>
+                <input value={grantValues[g.key]} onChange={e => grantSetters[g.key](e.target.value)}
+                  type="number" placeholder="0"
+                  onKeyDown={e => ['e','E','+','-'].includes(e.key) && e.preventDefault()}
+                  className={numInput} />
+              </div>
+            ))}
+            {totalGrants > 0 && (
+              <div className="flex justify-between text-sm pt-1 border-t border-slate-700">
+                <span className="text-slate-400">Total grants</span>
+                <span className="font-bold text-green-400">+{formatCurrency(totalGrants)}</span>
+              </div>
+            )}
+          </div>
+
           <div>
             <label className="text-xs text-slate-400 mb-1 block">
-              Planned OA usage (SGD)
-              {oaBalance > 0 && <span className="text-blue-400 ml-2">OA balance: {formatCurrency(oaBalance)}</span>}
+              Planned OA usage — your own savings (SGD)
+              {oaBalance > 0 && <span className="text-blue-400 ml-2">OA now: {formatCurrency(oaBalance)}</span>}
             </label>
             <input value={oaPlanned} onChange={e => setOaPlanned(e.target.value)} type="number" placeholder="80000"
-              className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-blue-500" />
+              onKeyDown={e => ['e','E','+','-'].includes(e.key) && e.preventDefault()}
+              className={numInput} />
           </div>
           <div>
             <label className="text-xs text-slate-400 mb-1 block">Cash down payment (SGD)</label>
             <input value={cashDP} onChange={e => setCashDP(e.target.value)} type="number" placeholder="22500"
-              className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-blue-500" />
+              onKeyDown={e => ['e','E','+','-'].includes(e.key) && e.preventDefault()}
+              className={numInput} />
           </div>
+
+          {/* Live summary */}
+          {price > 0 && (
+            <div className="bg-slate-800 rounded-xl p-3 space-y-1.5 text-sm">
+              <div className="flex justify-between"><span className="text-slate-400">Flat price</span><span>{formatCurrency(price)}</span></div>
+              {totalGrants > 0 && <div className="flex justify-between"><span className="text-slate-400">Grants (to OA)</span><span className="text-green-400">− {formatCurrency(totalGrants)}</span></div>}
+              {totalGrants > 0 && <div className="flex justify-between border-t border-slate-700 pt-1.5"><span className="text-slate-300 font-medium">Amount to fund</span><span className="font-bold">{formatCurrency(afterGrants)}</span></div>}
+              <div className="flex justify-between"><span className="text-slate-400">OA (your savings{totalGrants > 0 ? ' + grants' : ''})</span><span className="text-blue-400">{formatCurrency(oa + totalGrants)}</span></div>
+              <div className="flex justify-between"><span className="text-slate-400">Cash down</span><span className="text-yellow-400">{formatCurrency(cash)}</span></div>
+              <div className="flex justify-between border-t border-slate-700 pt-1.5">
+                <span className="text-slate-300 font-medium">Estimated loan</span>
+                <span className={`font-bold ${loanNeeded === 0 ? 'text-green-400' : 'text-orange-400'}`}>{formatCurrency(loanNeeded)}</span>
+              </div>
+            </div>
+          )}
+
           <div>
             <label className="text-xs text-slate-400 mb-1 block">Target date (optional)</label>
             <input value={targetDate} onChange={e => setTargetDate(e.target.value)} type="date"
-              className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-blue-500" />
+              className={numInput} />
           </div>
           <div>
             <label className="text-xs text-slate-400 mb-1 block">Notes (optional)</label>
-            <textarea value={notes} onChange={e => setNotes(e.target.value)} rows={2} placeholder="Grant eligibility, loan type..."
+            <textarea value={notes} onChange={e => setNotes(e.target.value)} rows={2} placeholder="HDB loan vs bank loan, etc."
               className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-blue-500 resize-none" />
           </div>
         </div>
@@ -244,11 +332,14 @@ export default function CPFPage() {
         ) : (
           <div className="space-y-3">
             {housingGoals.map(goal => {
-              const total     = goal.cpfOAPlanned + goal.cashDownPayment
-              const pct       = goal.targetPrice > 0 ? Math.min(100, (total / goal.targetPrice) * 100) : 0
-              const remaining = Math.max(0, goal.targetPrice - total)
-              const addedDate = tsToDate(goal.createdAt)
-              const targetDate = tsToDate(goal.targetDate ?? undefined)
+              const totalGrants  = (goal.grantEHG ?? 0) + (goal.grantCPFHousing ?? 0) + (goal.grantProximity ?? 0) + (goal.grantStepUp ?? 0)
+              const afterGrants  = Math.max(0, goal.targetPrice - totalGrants)
+              const oaWithGrants = goal.cpfOAPlanned + totalGrants
+              const loanNeeded   = Math.max(0, afterGrants - goal.cpfOAPlanned - goal.cashDownPayment)
+              const totalCovered = oaWithGrants + goal.cashDownPayment
+              const pct          = goal.targetPrice > 0 ? Math.min(100, (totalCovered / goal.targetPrice) * 100) : 0
+              const addedDate    = tsToDate(goal.createdAt)
+              const targetDate   = tsToDate(goal.targetDate ?? undefined)
 
               return (
                 <div key={goal.id} className="bg-slate-900 border border-slate-800 rounded-2xl p-4">
@@ -267,33 +358,79 @@ export default function CPFPage() {
 
                   <div className="grid grid-cols-2 gap-2 text-sm mb-3">
                     <div className="bg-slate-800/60 rounded-xl p-2.5">
-                      <p className="text-xs text-slate-400">Target Price</p>
+                      <p className="text-xs text-slate-400">Flat Price</p>
                       <p className="font-bold">{formatCurrency(goal.targetPrice)}</p>
                     </div>
+                    {totalGrants > 0 ? (
+                      <div className="bg-green-500/10 border border-green-500/20 rounded-xl p-2.5">
+                        <p className="text-xs text-green-400">Grants (to OA)</p>
+                        <p className="font-bold text-green-400">+{formatCurrency(totalGrants)}</p>
+                      </div>
+                    ) : (
+                      <div className="bg-slate-800/60 rounded-xl p-2.5">
+                        <p className="text-xs text-slate-400">Grants</p>
+                        <p className="font-bold text-slate-500">None added</p>
+                      </div>
+                    )}
                     <div className="bg-slate-800/60 rounded-xl p-2.5">
-                      <p className="text-xs text-slate-400">Still Needed</p>
-                      <p className={`font-bold ${remaining === 0 ? 'text-green-400' : ''}`}>{formatCurrency(remaining)}</p>
-                    </div>
-                    <div className="bg-slate-800/60 rounded-xl p-2.5">
-                      <p className="text-xs text-slate-400">OA Planned</p>
-                      <p className="font-bold text-blue-400">{formatCurrency(goal.cpfOAPlanned)}</p>
+                      <p className="text-xs text-slate-400">OA {totalGrants > 0 ? '+ Grants' : 'Planned'}</p>
+                      <p className="font-bold text-blue-400">{formatCurrency(oaWithGrants)}</p>
+                      {totalGrants > 0 && <p className="text-xs text-slate-500">Your OA: {formatCurrency(goal.cpfOAPlanned)}</p>}
                     </div>
                     <div className="bg-slate-800/60 rounded-xl p-2.5">
                       <p className="text-xs text-slate-400">Cash Down</p>
                       <p className="font-bold text-yellow-400">{formatCurrency(goal.cashDownPayment)}</p>
                     </div>
+                    <div className="bg-slate-800/60 rounded-xl p-2.5 col-span-2">
+                      <p className="text-xs text-slate-400">Estimated Loan Needed</p>
+                      <p className={`font-bold ${loanNeeded === 0 ? 'text-green-400' : 'text-orange-400'}`}>{formatCurrency(loanNeeded)}</p>
+                    </div>
                   </div>
 
-                  {/* Progress bar */}
+                  {/* Progress bar — (OA + grants + cash) vs total price */}
                   <div>
                     <div className="flex justify-between text-xs mb-1">
-                      <span className="text-slate-400">Down payment progress</span>
-                      <span className="font-semibold">{pct.toFixed(0)}%</span>
+                      <span className="text-slate-400">Downpayment covered</span>
+                      <span className="font-semibold">{pct.toFixed(0)}% of flat price</span>
                     </div>
-                    <div className="h-2 bg-slate-800 rounded-full overflow-hidden">
-                      <div className="h-full rounded-full bg-blue-500 transition-all" style={{ width: `${pct}%` }} />
+                    <div className="h-2 bg-slate-800 rounded-full overflow-hidden flex">
+                      {/* CPF OA (personal) portion */}
+                      {goal.cpfOAPlanned > 0 && (
+                        <div className="h-full bg-blue-500 transition-all"
+                          style={{ width: `${Math.min(100, (goal.cpfOAPlanned / goal.targetPrice) * 100)}%` }} />
+                      )}
+                      {/* Grants portion */}
+                      {totalGrants > 0 && (
+                        <div className="h-full bg-green-500 transition-all"
+                          style={{ width: `${Math.min(100, (totalGrants / goal.targetPrice) * 100)}%` }} />
+                      )}
+                      {/* Cash portion */}
+                      {goal.cashDownPayment > 0 && (
+                        <div className="h-full bg-yellow-500 transition-all"
+                          style={{ width: `${Math.min(100, (goal.cashDownPayment / goal.targetPrice) * 100)}%` }} />
+                      )}
                     </div>
+                    {totalGrants > 0 && (
+                      <div className="flex gap-3 mt-1.5">
+                        <LegendDot color="#3b82f6" label="Your OA" />
+                        <LegendDot color="#22c55e" label="Grants" />
+                        <LegendDot color="#eab308" label="Cash" />
+                      </div>
+                    )}
                   </div>
+
+                  {/* Grant breakdown if any */}
+                  {totalGrants > 0 && (
+                    <div className="mt-3 bg-green-500/5 border border-green-500/15 rounded-xl p-3 space-y-1">
+                      <p className="text-xs font-semibold text-green-400 mb-1.5">Grant breakdown</p>
+                      {GRANTS.filter(g => (goal[g.key as keyof HousingGoal] as number) > 0).map(g => (
+                        <div key={g.key} className="flex justify-between text-xs">
+                          <span className="text-slate-400">{g.label}</span>
+                          <span className="font-semibold text-green-300">{formatCurrency((goal[g.key as keyof HousingGoal] as number) ?? 0)}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
 
                   {(targetDate || goal.notes) && (
                     <div className="mt-3 space-y-1">

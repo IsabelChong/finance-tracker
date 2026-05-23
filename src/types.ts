@@ -94,6 +94,11 @@ export interface HousingGoal {
   targetPrice: number
   cpfOAPlanned: number
   cashDownPayment: number
+  // HDB grants — all credited to CPF OA
+  grantEHG?: number           // Enhanced CPF Housing Grant (up to $120,000)
+  grantCPFHousing?: number    // CPF Housing Grant / Family Grant (up to $80,000)
+  grantProximity?: number     // Proximity Housing Grant (up to $30,000)
+  grantStepUp?: number        // Step-Up CPF Housing Grant ($15,000)
   targetDate?: Timestamp
   notes: string
   createdAt: Timestamp
