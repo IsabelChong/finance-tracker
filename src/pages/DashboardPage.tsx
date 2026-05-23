@@ -205,6 +205,11 @@ function MonthPickerPopover({ selected, onSelect }: { selected: Date; onSelect: 
           )
         })}
       </div>
+      <button
+        onClick={() => onSelect(new Date(today.getFullYear(), today.getMonth(), 1))}
+        className="mt-3 w-full py-1.5 rounded-xl text-xs font-semibold text-blue-400 hover:bg-slate-700 transition-colors border border-slate-700">
+        Current month
+      </button>
     </div>
   )
 }
@@ -295,7 +300,7 @@ function MonthTab({ month, isCurrentMonth, onPrev, onNext, onSelectMonth, transa
               <Pie data={cats} dataKey="amount" nameKey="name" cx="50%" cy="50%" innerRadius={55} outerRadius={90} paddingAngle={2}>
                 {cats.map((_, i) => <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />)}
               </Pie>
-              <Tooltip formatter={(v: number) => formatCurrency(v)} contentStyle={{ background: '#1e293b', border: '1px solid #334155', borderRadius: 10, fontSize: 12, color: '#f1f5f9' }} />
+              <Tooltip formatter={(v: number) => formatCurrency(v)} contentStyle={{ background: '#1e293b', border: '1px solid #334155', borderRadius: 10, fontSize: 12 }} labelStyle={{ color: '#f1f5f9' }} itemStyle={{ color: '#f1f5f9' }} />
             </PieChart>
           </ResponsiveContainer>
 
@@ -432,7 +437,8 @@ function YearTab({ yearlyMonths, income, expenses, transactions, catTotals }: {
             <YAxis tick={{ fill: '#64748b', fontSize: 10 }} axisLine={false} tickLine={false} tickFormatter={v => v >= 1000 ? `${(v/1000).toFixed(0)}k` : String(v)} width={36} />
             <Tooltip
               formatter={(v: number, name: string) => [formatCurrency(v), name === 'income' ? 'Income' : 'Expenses']}
-              contentStyle={{ background: '#1e293b', border: '1px solid #334155', borderRadius: 10, fontSize: 12, color: '#f1f5f9' }}
+              contentStyle={{ background: '#1e293b', border: '1px solid #334155', borderRadius: 10, fontSize: 12 }}
+              labelStyle={{ color: '#f1f5f9' }} itemStyle={{ color: '#f1f5f9' }}
             />
             <Bar dataKey="income" fill="#22c55e" radius={[4, 4, 0, 0]} />
             <Bar dataKey="expenses" fill="#ef4444" radius={[4, 4, 0, 0]} />
@@ -529,7 +535,7 @@ function AllTimeTab({ transactions, accounts, investments, totalValue, totalCost
               <Pie data={netWorthPie} dataKey="value" nameKey="name" cx="50%" cy="50%" innerRadius={55} outerRadius={90} paddingAngle={2}>
                 {netWorthPie.map((d, i) => <Cell key={i} fill={d.color} />)}
               </Pie>
-              <Tooltip formatter={(v: number) => formatCurrency(v)} contentStyle={{ background: '#1e293b', border: '1px solid #334155', borderRadius: 10, fontSize: 12, color: '#f1f5f9' }} />
+              <Tooltip formatter={(v: number) => formatCurrency(v)} contentStyle={{ background: '#1e293b', border: '1px solid #334155', borderRadius: 10, fontSize: 12 }} labelStyle={{ color: '#f1f5f9' }} itemStyle={{ color: '#f1f5f9' }} />
             </PieChart>
           </ResponsiveContainer>
           <div className="flex gap-4 justify-center mt-1">
