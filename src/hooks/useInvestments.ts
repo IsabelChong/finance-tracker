@@ -63,5 +63,10 @@ export function useInvestments() {
   const totalGainLossSGD = totalValueSGD - totalCostSGD
   const totalGainLossPct = totalCostSGD > 0 ? (totalGainLossSGD / totalCostSGD) * 100 : 0
 
-  return { investments, loading, addInvestment, updateInvestment, deleteInvestment, updatePricesByTicker, reorderInvestmentGroups, totalCostSGD, totalValueSGD, totalGainLossSGD, totalGainLossPct }
+  const cpfOaInvestments = investments.filter(i => i.fundedBy === 'cpf-oa')
+  const cpfOaInvestedCostSGD  = cpfOaInvestments.reduce((s, i) => s + toSGD(i.shares * i.purchasePrice, i.currency), 0)
+  const cpfOaCurrentValueSGD  = cpfOaInvestments.reduce((s, i) => s + toSGD(i.shares * i.currentPrice,  i.currency), 0)
+  const cpfOaGainLossSGD = cpfOaCurrentValueSGD - cpfOaInvestedCostSGD
+
+  return { investments, loading, addInvestment, updateInvestment, deleteInvestment, updatePricesByTicker, reorderInvestmentGroups, totalCostSGD, totalValueSGD, totalGainLossSGD, totalGainLossPct, cpfOaInvestedCostSGD, cpfOaCurrentValueSGD, cpfOaGainLossSGD }
 }

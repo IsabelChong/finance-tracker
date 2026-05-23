@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { doc, onSnapshot, setDoc, collection, addDoc, updateDoc, deleteDoc, serverTimestamp, query, orderBy } from 'firebase/firestore'
+import { doc, onSnapshot, setDoc, collection, addDoc, updateDoc, deleteDoc, serverTimestamp, query, orderBy, increment } from 'firebase/firestore'
 import { db, cpfDoc, housingGoalsCol } from '../lib/firebase'
 import { CPFData, HousingGoal } from '../types'
 import { useAuth } from '../contexts/AuthContext'
@@ -48,7 +48,15 @@ export function useCPF() {
     await deleteDoc(doc(db, housingGoalsCol(user.uid), id))
   }
 
+  const incrementOABalance = async (amount: number) => {
+    if (!user) return
+    await setDoc(doc(db, cpfDoc(user.uid)), {
+      ordinaryBalance: increment(amount),
+      ordinaryLastUpdated: serverTimestamp(),
+    }, { merge: true })
+  }
+
   const totalCPF = (cpf?.ordinaryBalance ?? 0) + (cpf?.specialBalance ?? 0) + (cpf?.medisaveBalance ?? 0)
 
-  return { cpf, loading, housingGoals, totalCPF, updateCPFBalance, addHousingGoal, updateHousingGoal, deleteHousingGoal }
+  return { cpf, loading, housingGoals, totalCPF, updateCPFBalance, incrementOABalance, addHousingGoal, updateHousingGoal, deleteHousingGoal }
 }

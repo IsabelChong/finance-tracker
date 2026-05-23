@@ -1,10 +1,12 @@
 import { useState } from 'react'
-import { Pencil, X, Check, Plus, Trash2, Home, Info } from 'lucide-react'
+import { Pencil, X, Check, Plus, Trash2, Home, Info, TrendingUp, TrendingDown } from 'lucide-react'
 import DatePicker from '../components/DatePicker'
 import { Timestamp } from 'firebase/firestore'
 import { useCPF } from '../hooks/useCPF'
+import { useInvestments } from '../hooks/useInvestments'
+import { useFXRates } from '../contexts/FXRatesContext'
 import { HousingGoal } from '../types'
-import { formatCurrency, formatDate } from '../lib/utils'
+import { formatCurrency, formatDate, formatWithCurrency, formatPercent } from '../lib/utils'
 
 type AccountKey = 'ordinary' | 'special' | 'medisave'
 
@@ -195,6 +197,33 @@ function HousingGoalModal({ goal, oaBalance, onSave, onClose }: {
 
 export default function CPFPage() {
   const { cpf, loading, housingGoals, totalCPF, updateCPFBalance, addHousingGoal, updateHousingGoal, deleteHousingGoal } = useCPF()
+  const { investments } = useInvestments()
+  const { toSGD } = useFXRates()
+
+  const cpfInvestments = investments.filter(i => i.fundedBy === 'cpf-oa')
+
+  // Group CPFIS by ticker for display
+  const cpfTickerMap: Record<string, typeof cpfInvestments> = {}
+  for (const inv of cpfInvestments) {
+    if (!cpfTickerMap[inv.ticker]) cpfTickerMap[inv.ticker] = []
+    cpfTickerMap[inv.ticker].push(inv)
+  }
+  const cpfGroups = Object.entries(cpfTickerMap).map(([ticker, lots]) => {
+    const totalShares = lots.reduce((s, l) => s + l.shares, 0)
+    const costSGD  = lots.reduce((s, l) => s + toSGD(l.shares * l.purchasePrice, l.currency), 0)
+    const valueSGD = lots.reduce((s, l) => s + toSGD(l.shares * l.currentPrice,  l.currency), 0)
+    const gl = valueSGD - costSGD
+    const glPct = costSGD > 0 ? (gl / costSGD) * 100 : 0
+    const currency = lots[0]?.currency ?? 'SGD'
+    const name = lots.find(l => l.name)?.name ?? ''
+    return { ticker, name, currency, lots, totalShares, costSGD, valueSGD, gl, glPct }
+  })
+
+  const cpfOaInvestedCostSGD  = cpfGroups.reduce((s, g) => s + g.costSGD,  0)
+  const cpfOaCurrentValueSGD  = cpfGroups.reduce((s, g) => s + g.valueSGD, 0)
+  const cpfOaGainLossSGD = cpfOaCurrentValueSGD - cpfOaInvestedCostSGD
+  const cpfOaGainLossPct = cpfOaInvestedCostSGD > 0 ? (cpfOaGainLossSGD / cpfOaInvestedCostSGD) * 100 : 0
+  const availableOA = Math.max(0, (cpf?.ordinaryBalance ?? 0) - 20000)
 
   const [editing, setEditing]     = useState<AccountKey | null>(null)
   const [editAmount, setEditAmount] = useState('')
@@ -232,7 +261,10 @@ export default function CPFPage() {
         </div>
         <div className="text-right">
           <p className="text-xs text-slate-400">Total CPF</p>
-          <p className="text-2xl font-bold">{formatCurrency(totalCPF)}</p>
+          <p className="text-2xl font-bold">{formatCurrency(totalCPF + cpfOaCurrentValueSGD)}</p>
+          {cpfOaCurrentValueSGD > 0 && (
+            <p className="text-xs text-slate-500">incl. {formatCurrency(cpfOaCurrentValueSGD)} CPFIS</p>
+          )}
         </div>
       </div>
 
@@ -312,6 +344,76 @@ export default function CPFPage() {
           )
         })}
       </div>
+
+      {/* CPFIS Portfolio */}
+      {cpfGroups.length > 0 && (
+        <div>
+          <h2 className="font-bold mb-3">CPFIS Portfolio</h2>
+
+          {/* Summary card */}
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 mb-3">
+            <div className="grid grid-cols-3 gap-3 text-sm mb-3">
+              <div>
+                <p className="text-xs text-slate-400 mb-0.5">Invested (cost)</p>
+                <p className="font-bold">{formatCurrency(cpfOaInvestedCostSGD)}</p>
+              </div>
+              <div>
+                <p className="text-xs text-slate-400 mb-0.5">Current value</p>
+                <p className="font-bold">{formatCurrency(cpfOaCurrentValueSGD)}</p>
+              </div>
+              <div>
+                <p className="text-xs text-slate-400 mb-0.5">Gain / Loss</p>
+                <div className="flex items-center gap-1">
+                  {cpfOaGainLossSGD >= 0
+                    ? <TrendingUp size={13} className="text-green-400 shrink-0" />
+                    : <TrendingDown size={13} className="text-red-400 shrink-0" />}
+                  <p className={`font-bold text-xs ${cpfOaGainLossSGD >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                    {cpfOaGainLossSGD >= 0 ? '+' : ''}{formatCurrency(cpfOaGainLossSGD)}<br />
+                    ({formatPercent(cpfOaGainLossPct)})
+                  </p>
+                </div>
+              </div>
+            </div>
+            <div className="flex items-center justify-between bg-blue-500/10 border border-blue-500/20 rounded-xl px-3 py-2">
+              <div>
+                <p className="text-xs text-blue-300 font-medium">Available OA for investment</p>
+                <p className="text-xs text-slate-500">Uninvested OA − $20,000 minimum floor</p>
+              </div>
+              <p className="font-bold text-blue-300">{formatCurrency(availableOA)}</p>
+            </div>
+          </div>
+
+          {/* Holdings list */}
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl divide-y divide-slate-800 overflow-hidden">
+            {cpfGroups.map(g => (
+              <div key={g.ticker} className="px-4 py-3">
+                <div className="flex items-center gap-3">
+                  <div className="w-9 h-9 bg-slate-800 rounded-xl flex items-center justify-center shrink-0">
+                    <span className="text-xs font-bold text-blue-400">{g.ticker.slice(0, 4)}</span>
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-semibold">{g.ticker}</span>
+                      <span className="text-xs bg-blue-500/20 text-blue-300 px-1.5 py-0.5 rounded-full">CPF OA</span>
+                      {g.lots.length > 1 && (
+                        <span className="text-xs bg-slate-700 text-slate-400 px-1.5 py-0.5 rounded-full">{g.lots.length} lots</span>
+                      )}
+                    </div>
+                    {g.name && <p className="text-xs text-slate-500 truncate">{g.name}</p>}
+                    <p className="text-xs text-slate-500">{g.totalShares} shares · {formatWithCurrency(g.lots[0]?.currentPrice ?? 0, g.currency)}</p>
+                  </div>
+                  <div className="text-right shrink-0">
+                    <p className="text-sm font-bold">{formatCurrency(g.valueSGD)}</p>
+                    <p className={`text-xs font-semibold ${g.gl >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                      {g.gl >= 0 ? '+' : ''}{formatCurrency(g.gl)} ({formatPercent(g.glPct)})
+                    </p>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Housing Goals */}
       <div>

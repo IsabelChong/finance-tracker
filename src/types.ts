@@ -62,6 +62,7 @@ export interface Investment {
   currency: string
   notes: string
   sortOrder?: number
+  fundedBy?: 'cash' | 'cpf-oa'
   lastUpdated: Timestamp
   createdAt: Timestamp
 }

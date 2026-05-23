@@ -4,6 +4,7 @@ import { Account } from '../types'
 import DatePicker from '../components/DatePicker'
 import { useInvestments } from '../hooks/useInvestments'
 import { useAccounts } from '../hooks/useAccounts'
+import { useCPF } from '../hooks/useCPF'
 import { useFXRates } from '../contexts/FXRatesContext'
 import { formatCurrency, formatWithCurrency, formatPercent, formatDate } from '../lib/utils'
 import { Investment } from '../types'
@@ -21,6 +22,7 @@ interface TickerGroup {
   weightedAvgCost: number
   gainLoss: number
   gainLossPct: number
+  hasCPFLots: boolean
 }
 
 function groupByTicker(investments: Investment[], toSGD: (amount: number, currency: string) => number): TickerGroup[] {
@@ -39,7 +41,8 @@ function groupByTicker(investments: Investment[], toSGD: (amount: number, curren
     const gainLoss = totalValue - totalCost
     const gainLossPct = totalCost > 0 ? (gainLoss / totalCost) * 100 : 0
     const name = lots.find(l => l.name)?.name ?? ''
-    return { ticker, name, currency, lots, totalShares, totalCost, totalValue, totalValueSGD, weightedAvgCost, gainLoss, gainLossPct }
+    const hasCPFLots = lots.some(l => l.fundedBy === 'cpf-oa')
+    return { ticker, name, currency, lots, totalShares, totalCost, totalValue, totalValueSGD, weightedAvgCost, gainLoss, gainLossPct, hasCPFLots }
   }).sort((a, b) => {
     const sa = Math.min(...a.lots.map(l => l.sortOrder ?? 999999))
     const sb = Math.min(...b.lots.map(l => l.sortOrder ?? 999999))
@@ -50,6 +53,7 @@ function groupByTicker(investments: Investment[], toSGD: (amount: number, curren
 export default function InvestmentsPage() {
   const { investments, addInvestment, updateInvestment, deleteInvestment, updatePricesByTicker, reorderInvestmentGroups, totalCostSGD, totalValueSGD, totalGainLossSGD, totalGainLossPct } = useInvestments()
   const { accounts, addTransaction } = useAccounts()
+  const { cpf, incrementOABalance } = useCPF()
   const { rates, updateRate, toSGD } = useFXRates()
   const [showAdd, setShowAdd] = useState(false)
   const [showUpdatePrices, setShowUpdatePrices] = useState(false)
@@ -60,8 +64,13 @@ export default function InvestmentsPage() {
   const [fxDraft, setFxDraft] = useState<Record<string, string>>({})
   const [reorderMode, setReorderMode] = useState(false)
   const [dragState, setDragState] = useState<{ from: number; over: number } | null>(null)
+  const [filterBy, setFilterBy] = useState<'all' | 'cash' | 'cpf-oa'>('all')
 
   const groups = groupByTicker(investments, toSGD)
+  const hasCPFInvestments = groups.some(g => g.hasCPFLots)
+  const filteredGroups = filterBy === 'all' ? groups
+    : filterBy === 'cpf-oa' ? groups.filter(g => g.hasCPFLots)
+    : groups.filter(g => !g.hasCPFLots)
 
   const handleGroupDrop = (toIdx: number) => {
     if (!dragState || dragState.from === toIdx) { setDragState(null); return }
@@ -101,7 +110,7 @@ export default function InvestmentsPage() {
         <div className="flex gap-2">
           {groups.length > 1 && (
             <button
-              onClick={() => { setReorderMode(r => !r); setDragState(null) }}
+              onClick={() => { setReorderMode(r => !r); setDragState(null); setFilterBy('all') }}
               className={`flex items-center gap-1.5 text-sm font-semibold px-3 py-2 rounded-xl transition-colors ${reorderMode ? 'bg-green-600 hover:bg-green-700 text-white' : 'bg-slate-700 hover:bg-slate-600 text-white'}`}
             >
               {reorderMode ? <><Check size={14} /> Done</> : <><GripVertical size={14} /> Reorder</>}
@@ -175,14 +184,30 @@ export default function InvestmentsPage() {
         </button>
       </div>
 
+      {/* Filter tabs */}
+      {hasCPFInvestments && (
+        <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide">
+          {([['all', 'All'], ['cash', '💵 Cash'], ['cpf-oa', '🏛️ CPF OA']] as const).map(([val, label]) => (
+            <button key={val} onClick={() => setFilterBy(val)}
+              className={`shrink-0 px-3 py-1.5 rounded-full text-sm font-medium transition-colors ${filterBy === val ? 'bg-blue-600 text-white' : 'bg-slate-800 text-slate-400 hover:text-white'}`}>
+              {label}
+            </button>
+          ))}
+        </div>
+      )}
+
       {/* Holdings grouped by ticker */}
       {groups.length === 0 ? (
         <div className="bg-slate-900 border border-slate-800 rounded-xl p-10 text-center text-slate-500">
           No investments yet. Add your first holding.
         </div>
+      ) : filteredGroups.length === 0 ? (
+        <div className="bg-slate-900 border border-slate-800 rounded-xl p-10 text-center text-slate-500">
+          No {filterBy === 'cpf-oa' ? 'CPF OA' : 'cash'} investments.
+        </div>
       ) : (
         <div className="space-y-2">
-          {groups.map((group, gi) => {
+          {filteredGroups.map((group, gi) => {
             const expanded = expandedTickers.has(group.ticker)
             const multipleLots = group.lots.length > 1
             const isDraggedOver = reorderMode && dragState?.over === gi && dragState.from !== gi
@@ -213,6 +238,9 @@ export default function InvestmentsPage() {
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2">
                       <span className="text-sm font-semibold">{group.ticker}</span>
+                      {group.hasCPFLots && (
+                        <span className="text-xs bg-blue-500/20 text-blue-300 px-1.5 py-0.5 rounded-full">CPF OA</span>
+                      )}
                       {multipleLots && (
                         <span className="text-xs bg-slate-700 text-slate-300 px-2 py-0.5 rounded-full">
                           {group.lots.length} lots
@@ -287,7 +315,14 @@ export default function InvestmentsPage() {
         </div>
       )}
 
-      {showAdd && <AddInvestmentModal existingGroups={groups} onClose={() => setShowAdd(false)} onSave={async (d) => { await addInvestment(d); setShowAdd(false) }} />}
+      {showAdd && <AddInvestmentModal existingGroups={groups} oaBalance={cpf?.ordinaryBalance ?? 0} toSGD={toSGD} onClose={() => setShowAdd(false)} onSave={async (d) => {
+        await addInvestment(d)
+        if (d.fundedBy === 'cpf-oa') {
+          const sgdCost = toSGD((d.shares as number) * (d.purchasePrice as number), d.currency as string)
+          await incrementOABalance(-sgdCost)
+        }
+        setShowAdd(false)
+      }} />}
       {showUpdatePrices && (
         <UpdatePricesModal
           groups={groups}
@@ -301,8 +336,11 @@ export default function InvestmentsPage() {
           accounts={accounts.filter(a => a.type !== 'credit')}
           onClose={() => setSelected(null)}
           onUpdate={updateInvestment}
-          onDelete={async (id, saleData) => {
-            if (saleData) {
+          onOAIncrement={incrementOABalance}
+          onDelete={async (id, saleData, returnToOA) => {
+            if (returnToOA && saleData) {
+              await incrementOABalance(saleData.amount)
+            } else if (saleData) {
               const acc = accounts.find(a => a.id === saleData.accountId)
               await addTransaction({
                 date: saleData.date,
@@ -331,8 +369,10 @@ export default function InvestmentsPage() {
 }
 
 
-function AddInvestmentModal({ existingGroups, onClose, onSave }: {
+function AddInvestmentModal({ existingGroups, oaBalance, toSGD, onClose, onSave }: {
   existingGroups: TickerGroup[]
+  oaBalance: number
+  toSGD: (amount: number, currency: string) => number
   onClose: () => void
   onSave: (d: any) => void
 }) {
@@ -347,6 +387,7 @@ function AddInvestmentModal({ existingGroups, onClose, onSave }: {
   const [broker, setBroker]             = useState('')
   const [currency, setCurrency]         = useState('USD')
   const [notes, setNotes]               = useState('')
+  const [fundedBy, setFundedBy]         = useState<'cash' | 'cpf-oa'>('cash')
 
   const selectExisting = (g: TickerGroup) => {
     setPinnedTicker(g)
@@ -355,11 +396,12 @@ function AddInvestmentModal({ existingGroups, onClose, onSave }: {
     setCurrency(g.lots[0]?.currency ?? 'USD')
     setCurrentPrice(String(g.lots[0]?.currentPrice ?? ''))
     setBroker(g.lots[0]?.broker ?? '')
+    if (g.hasCPFLots) setFundedBy('cpf-oa')
   }
 
   const clearExisting = () => {
     setPinnedTicker(null)
-    setTicker(''); setName(''); setCurrentPrice(''); setBroker(''); setCurrency('USD')
+    setTicker(''); setName(''); setCurrentPrice(''); setBroker(''); setCurrency('USD'); setFundedBy('cash')
   }
 
   const cost  = (Number(shares) || 0) * (Number(purchasePrice) || 0)
@@ -487,11 +529,43 @@ function AddInvestmentModal({ existingGroups, onClose, onSave }: {
             </div>
           )}
 
+          {/* Funded by toggle */}
+          <div>
+            <label className="text-xs text-slate-400 font-medium block mb-1.5">Funded by</label>
+            <div className="flex gap-2">
+              {(['cash', 'cpf-oa'] as const).map(opt => (
+                <button key={opt} onClick={() => !pinnedTicker && setFundedBy(opt)}
+                  disabled={!!pinnedTicker}
+                  className={`flex-1 py-2.5 rounded-xl text-sm font-semibold border transition-all ${
+                    fundedBy === opt
+                      ? opt === 'cpf-oa' ? 'bg-blue-600 border-blue-500 text-white' : 'bg-slate-600 border-slate-500 text-white'
+                      : 'bg-slate-800 border-slate-700 text-slate-400 hover:text-white hover:border-slate-600'
+                  } ${pinnedTicker ? 'cursor-not-allowed opacity-70' : ''}`}>
+                  {opt === 'cash' ? '💵 Cash' : '🏛️ CPF OA'}
+                </button>
+              ))}
+            </div>
+            {fundedBy === 'cpf-oa' && (
+              <div className="mt-2 bg-blue-500/10 border border-blue-500/20 rounded-xl px-3 py-2">
+                <p className="text-xs text-blue-300">Stored OA: <span className="font-bold">{formatCurrency(oaBalance)}</span>
+                  <span className="text-slate-500"> · Available: </span>
+                  <span className="font-bold">{formatCurrency(Math.max(0, oaBalance - 20000))}</span>
+                  <span className="text-slate-500"> (after $20k floor)</span>
+                </p>
+                {shares && purchasePrice && (
+                  <p className="text-xs text-blue-300 mt-0.5">
+                    This lot costs ≈ <span className="font-bold">{formatCurrency(toSGD(Number(shares) * Number(purchasePrice), currency))}</span> SGD — OA will be decremented automatically.
+                  </p>
+                )}
+              </div>
+            )}
+          </div>
+
           <input value={notes} onChange={e => setNotes(e.target.value)} placeholder="Notes (optional)"
             className={inputCls()} />
 
           <button
-            onClick={() => onSave({ ticker, name, shares: Number(shares), purchasePrice: Number(purchasePrice), currentPrice: Number(currentPrice), purchaseDate: Timestamp.fromDate(new Date(purchaseDate)), broker, currency, notes })}
+            onClick={() => onSave({ ticker, name, shares: Number(shares), purchasePrice: Number(purchasePrice), currentPrice: Number(currentPrice), purchaseDate: Timestamp.fromDate(new Date(purchaseDate)), broker, currency, notes, fundedBy })}
             disabled={!ticker || !shares || !purchasePrice || !currentPrice}
             className="w-full bg-blue-600 hover:bg-blue-700 disabled:opacity-40 text-white font-bold py-3.5 rounded-xl transition-colors">
             Add {pinnedTicker ? `${pinnedTicker.ticker} Lot` : 'Investment'}
@@ -502,30 +576,39 @@ function AddInvestmentModal({ existingGroups, onClose, onSave }: {
   )
 }
 
-function EditInvestmentModal({ investment, accounts, onClose, onUpdate, onDelete }: {
+function EditInvestmentModal({ investment, accounts, onClose, onUpdate, onDelete, onOAIncrement }: {
   investment: Investment
   accounts: Account[]
   onClose: () => void
   onUpdate: (id: string, d: any) => void
-  onDelete: (id: string, saleData?: { amount: number; accountId: string; date: Date }) => void
+  onDelete: (id: string, saleData?: { amount: number; accountId: string; date: Date }, returnToOA?: boolean) => void
+  onOAIncrement: (amount: number) => Promise<void>
 }) {
+  const isCPF = investment.fundedBy === 'cpf-oa'
+  const { toSGD } = useFXRates()
   const cost  = investment.shares * investment.purchasePrice
   const value = investment.shares * investment.currentPrice
+  const valueSGD = toSGD(value, investment.currency)
   const gl    = value - cost
 
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [withSale, setWithSale]           = useState(true)
-  const [saleAmount, setSaleAmount]       = useState(value.toFixed(2))
+  const [saleAmount, setSaleAmount]       = useState(valueSGD.toFixed(2))
   const [saleAccountId, setSaleAccountId] = useState(accounts[0]?.id ?? '')
   const [saleDate, setSaleDate]           = useState(new Date().toISOString().split('T')[0])
   const [deleting, setDeleting]           = useState(false)
 
   const handleDelete = async () => {
     setDeleting(true)
-    const saleData = withSale && saleAccountId
-      ? { amount: Number(saleAmount), accountId: saleAccountId, date: new Date(saleDate) }
-      : undefined
-    await onDelete(investment.id, saleData)
+    if (isCPF) {
+      const saleData = withSale ? { amount: Number(saleAmount), accountId: '', date: new Date(saleDate) } : undefined
+      await onDelete(investment.id, saleData, withSale)
+    } else {
+      const saleData = withSale && saleAccountId
+        ? { amount: Number(saleAmount), accountId: saleAccountId, date: new Date(saleDate) }
+        : undefined
+      await onDelete(investment.id, saleData, false)
+    }
   }
 
   return (
@@ -563,6 +646,7 @@ function EditInvestmentModal({ investment, accounts, onClose, onUpdate, onDelete
               <div className="bg-slate-800 rounded-xl p-4">
                 <p className="font-semibold text-sm mb-1">Delete {investment.ticker} lot</p>
                 <p className="text-xs text-slate-400">{investment.shares} shares · current value {formatWithCurrency(value, investment.currency)}</p>
+                {isCPF && <p className="text-xs text-blue-400 mt-0.5">Funded by CPF OA</p>}
               </div>
 
               {/* Option toggle */}
@@ -584,8 +668,12 @@ function EditInvestmentModal({ investment, accounts, onClose, onUpdate, onDelete
                     {withSale && <div className="w-2 h-2 rounded-full bg-blue-500" />}
                   </div>
                   <div>
-                    <p className="text-sm font-medium">Transfer sale proceeds to account</p>
-                    <p className="text-xs text-slate-500">Records an income transaction</p>
+                    <p className="text-sm font-medium">
+                      {isCPF ? 'Return proceeds to CPF OA' : 'Transfer sale proceeds to account'}
+                    </p>
+                    <p className="text-xs text-slate-500">
+                      {isCPF ? 'Increments your OA balance by the sale amount' : 'Records an income transaction'}
+                    </p>
                   </div>
                 </button>
               </div>
@@ -594,7 +682,9 @@ function EditInvestmentModal({ investment, accounts, onClose, onUpdate, onDelete
               {withSale && (
                 <div className="space-y-3 bg-slate-800/50 rounded-2xl p-3">
                   <div>
-                    <label className="text-xs text-slate-400 font-medium block mb-1.5">Amount received (SGD)</label>
+                    <label className="text-xs text-slate-400 font-medium block mb-1.5">
+                      {isCPF ? 'Amount returned to OA (SGD)' : 'Amount received (SGD)'}
+                    </label>
                     <input
                       type="number" value={saleAmount}
                       onChange={e => setSaleAmount(e.target.value)}
@@ -602,13 +692,15 @@ function EditInvestmentModal({ investment, accounts, onClose, onUpdate, onDelete
                       className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2.5 text-sm text-white outline-none focus:border-blue-500"
                     />
                   </div>
-                  <div>
-                    <label className="text-xs text-slate-400 font-medium block mb-1.5">Transfer into account</label>
-                    <select value={saleAccountId} onChange={e => setSaleAccountId(e.target.value)}
-                      className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2.5 text-sm text-white outline-none focus:border-blue-500">
-                      {accounts.map(a => <option key={a.id} value={a.id}>{a.name} ({formatCurrency(a.balance)})</option>)}
-                    </select>
-                  </div>
+                  {!isCPF && (
+                    <div>
+                      <label className="text-xs text-slate-400 font-medium block mb-1.5">Transfer into account</label>
+                      <select value={saleAccountId} onChange={e => setSaleAccountId(e.target.value)}
+                        className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2.5 text-sm text-white outline-none focus:border-blue-500">
+                        {accounts.map(a => <option key={a.id} value={a.id}>{a.name} ({formatCurrency(a.balance)})</option>)}
+                      </select>
+                    </div>
+                  )}
                   <div>
                     <label className="text-xs text-slate-400 font-medium block mb-1.5">Sale date</label>
                     <DatePicker value={saleDate} onChange={setSaleDate} />
@@ -620,9 +712,12 @@ function EditInvestmentModal({ investment, accounts, onClose, onUpdate, onDelete
                 <button onClick={() => setConfirmDelete(false)} className="flex-1 py-3 rounded-xl text-sm font-semibold text-slate-400 hover:text-white bg-slate-800 hover:bg-slate-700 transition-colors">
                   Cancel
                 </button>
-                <button onClick={handleDelete} disabled={deleting || (withSale && (!saleAmount || Number(saleAmount) <= 0 || !saleAccountId))}
+                <button onClick={handleDelete} disabled={deleting || (withSale && (!saleAmount || Number(saleAmount) <= 0 || (!isCPF && !saleAccountId)))}
                   className="flex-1 py-3 rounded-xl text-sm font-semibold bg-red-600 hover:bg-red-700 disabled:opacity-40 text-white transition-colors flex items-center justify-center gap-2">
-                  {deleting ? 'Processing…' : withSale ? <><ArrowDownToLine size={14} /> Delete & Transfer</> : 'Confirm Delete'}
+                  {deleting ? 'Processing…' : withSale
+                    ? <><ArrowDownToLine size={14} /> {isCPF ? 'Delete & Return to OA' : 'Delete & Transfer'}</>
+                    : 'Confirm Delete'
+                  }
                 </button>
               </div>
             </>

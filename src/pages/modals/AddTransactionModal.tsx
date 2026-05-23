@@ -104,10 +104,10 @@ export default function AddTransactionModal({ accounts, expenseCategories, incom
 
         <div className="p-5 space-y-5">
           {/* Type */}
-          <div className="flex bg-slate-800 rounded-xl p-1 gap-1">
+          <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide">
             {(['expense', 'income', 'transfer'] as TxType[]).map(t => (
               <button key={t} onClick={() => handleTypeChange(t)}
-                className={`flex-1 py-2 rounded-lg text-sm font-semibold transition-colors capitalize ${type === t ? 'bg-blue-600 text-white' : 'text-slate-400 hover:text-white'}`}>
+                className={`shrink-0 px-3 py-1.5 rounded-full text-sm font-medium transition-colors capitalize ${type === t ? 'bg-blue-600 text-white' : 'bg-slate-800 text-slate-400 hover:text-white'}`}>
                 {t}
               </button>
             ))}

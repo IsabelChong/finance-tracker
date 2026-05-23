@@ -64,7 +64,7 @@ export default function DashboardPage() {
 
   const { accounts, allocatedForAccount, bucketsForAccount, addTransaction } = useAccounts()
   const { transactions } = useTransactions()
-  const { totalValueSGD, totalCostSGD, totalGainLossSGD, totalGainLossPct, investments } = useInvestments()
+  const { totalValueSGD, totalCostSGD, totalGainLossSGD, totalGainLossPct, investments, cpfOaCurrentValueSGD } = useInvestments()
   const { expenseCategories, incomeCategories } = useCategories()
   const { totalCPF } = useCPF()
 
@@ -72,7 +72,9 @@ export default function DashboardPage() {
 
   const totalAssets      = accounts.filter(a => a.type !== 'credit').reduce((s, a) => s + a.balance, 0)
   const totalLiabilities = accounts.filter(a => a.type === 'credit').reduce((s, a) => s + a.balance, 0)
-  const netWorth         = totalAssets - totalLiabilities + totalValueSGD + totalCPF
+  const cashInvestedSGD  = totalValueSGD - cpfOaCurrentValueSGD
+  const effectiveCPF     = totalCPF + cpfOaCurrentValueSGD
+  const netWorth         = totalAssets - totalLiabilities + cashInvestedSGD + effectiveCPF
 
   const isCurrentMonth = isSameMonthYear(month, new Date())
 
@@ -95,17 +97,17 @@ export default function DashboardPage() {
         <p className="text-4xl font-bold mt-1">{formatCurrency(netWorth)}</p>
         <div className="flex gap-5 mt-4 flex-wrap">
           <Stat label="Cash" value={formatCurrency(totalAssets)} color="text-green-300" />
-          <Stat label="Invested" value={formatCurrency(totalValueSGD)} color="text-purple-300" />
-          {totalCPF > 0 && <Stat label="CPF" value={formatCurrency(totalCPF)} color="text-yellow-300" />}
+          {cashInvestedSGD > 0 && <Stat label="Invested" value={formatCurrency(cashInvestedSGD)} color="text-purple-300" />}
+          {effectiveCPF > 0 && <Stat label="CPF" value={formatCurrency(effectiveCPF)} color="text-yellow-300" />}
           {totalLiabilities > 0 && <Stat label="Debt" value={formatCurrency(totalLiabilities)} color="text-red-300" />}
         </div>
       </div>
 
       {/* Tab switcher */}
-      <div className="flex bg-slate-800 rounded-xl p-1 gap-1">
+      <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide">
         {([['month','Monthly'],['year','Yearly'],['alltime','All Time']] as [DashTab,string][]).map(([id, label]) => (
           <button key={id} onClick={() => setTab(id)}
-            className={`flex-1 py-2 rounded-lg text-sm font-semibold transition-colors ${tab === id ? 'bg-blue-600 text-white' : 'text-slate-400 hover:text-white'}`}>
+            className={`shrink-0 px-3 py-1.5 rounded-full text-sm font-medium transition-colors ${tab === id ? 'bg-blue-600 text-white' : 'bg-slate-800 text-slate-400 hover:text-white'}`}>
             {label}
           </button>
         ))}
@@ -139,10 +141,10 @@ export default function DashboardPage() {
           transactions={transactions}
           accounts={accounts}
           investments={investments}
-          totalValue={totalValueSGD} totalCost={totalCostSGD}
+          totalValue={cashInvestedSGD} totalCost={totalCostSGD}
           totalGainLoss={totalGainLossSGD} totalGainLossPct={totalGainLossPct}
           totalAssets={totalAssets} totalLiabilities={totalLiabilities} netWorth={netWorth}
-          totalCPF={totalCPF}
+          totalCPF={effectiveCPF}
           income={income} expenses={expenses}
           allocatedForAccount={allocatedForAccount}
           bucketsForAccount={bucketsForAccount}

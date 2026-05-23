@@ -7,7 +7,7 @@ import { formatCurrency, formatDate } from '../lib/utils'
 import { Account, AccountBucket } from '../types'
 import DatePicker from '../components/DatePicker'
 
-type Modal = null | 'addAccount' | { type: 'accountDetail'; account: Account } | { type: 'addBucket'; account: Account } | { type: 'editBucket'; bucket: AccountBucket }
+type Modal = null | 'addAccount' | { type: 'accountDetail'; accountId: string } | { type: 'addBucket'; accountId: string } | { type: 'editBucket'; bucket: AccountBucket }
 
 const COLORS = ['#3b82f6','#22c55e','#ef4444','#f59e0b','#8b5cf6','#ec4899','#14b8a6','#f97316']
 
@@ -96,7 +96,7 @@ export default function AccountsPage() {
               <AccountRow
                 account={acc}
                 allocated={allocatedForAccount(acc.id)}
-                onClick={() => !reorderMode && setModal({ type: 'accountDetail', account: acc })}
+                onClick={() => !reorderMode && setModal({ type: 'accountDetail', accountId: acc.id })}
                 reorderMode={reorderMode}
               />
             </div>
@@ -118,7 +118,7 @@ export default function AccountsPage() {
               <AccountRow
                 account={acc}
                 allocated={0}
-                onClick={() => !reorderMode && setModal({ type: 'accountDetail', account: acc })}
+                onClick={() => !reorderMode && setModal({ type: 'accountDetail', accountId: acc.id })}
                 reorderMode={reorderMode}
               />
             </div>
@@ -136,42 +136,49 @@ export default function AccountsPage() {
       {modal === 'addAccount' && (
         <AddAccountModal onClose={() => setModal(null)} onSave={async (data) => { await addAccount(data); setModal(null) }} />
       )}
-      {modal && typeof modal === 'object' && modal.type === 'accountDetail' && (
-        <AccountDetailModal
-          account={modal.account}
-          buckets={bucketsForAccount(modal.account.id)}
-          transactions={transactions.filter(t => t.accountId === modal.account.id || t.toAccountId === modal.account.id)}
-          wants={wants}
-          onClose={() => setModal(null)}
-          onAddBucket={() => setModal({ type: 'addBucket', account: modal.account })}
-          onUpdateBucket={updateBucket}
-          onDeleteBucket={deleteBucket}
-          onReorderBuckets={reorderBuckets}
-          onReconcile={(id, bal) => updateAccount(id, { balance: bal })}
-          onDelete={async (id) => { await deleteAccount(id); setModal(null) }}
-          onLogSpending={async (amount, date, payee) => {
-            const acc = modal.account
-            await addTransaction({
-              date, amount, type: 'expense',
-              categoryName: 'Credit Spending', categoryIcon: '💳', categoryColor: '#6366F1',
-              accountId: acc.id, accountName: acc.name,
-              payee, notes: '',
-            })
-          }}
-        />
-      )}
-      {modal && typeof modal === 'object' && modal.type === 'addBucket' && (
-        <AddBucketModal
-          account={modal.account}
-          wants={wants.filter(w => !w.bucketId)}
-          onClose={() => setModal(null)}
-          onSave={async (data, wantId) => {
-            const ref = await addBucket(data)
-            if (ref && wantId) await updateWant(wantId, { bucketId: ref.id })
-            setModal(null)
-          }}
-        />
-      )}
+      {modal && typeof modal === 'object' && modal.type === 'accountDetail' && (() => {
+        const liveAccount = accounts.find(a => a.id === modal.accountId)
+        if (!liveAccount) return null
+        return (
+          <AccountDetailModal
+            account={liveAccount}
+            buckets={bucketsForAccount(liveAccount.id)}
+            transactions={transactions.filter(t => t.accountId === liveAccount.id || t.toAccountId === liveAccount.id)}
+            wants={wants}
+            onClose={() => setModal(null)}
+            onAddBucket={() => setModal({ type: 'addBucket', accountId: liveAccount.id })}
+            onUpdateBucket={updateBucket}
+            onDeleteBucket={deleteBucket}
+            onReorderBuckets={reorderBuckets}
+            onReconcile={(id, bal) => updateAccount(id, { balance: bal })}
+            onDelete={async (id) => { await deleteAccount(id); setModal(null) }}
+            onLogSpending={async (amount, date, payee) => {
+              await addTransaction({
+                date, amount, type: 'expense',
+                categoryName: 'Credit Spending', categoryIcon: '💳', categoryColor: '#6366F1',
+                accountId: liveAccount.id, accountName: liveAccount.name,
+                payee, notes: '',
+              })
+            }}
+          />
+        )
+      })()}
+      {modal && typeof modal === 'object' && modal.type === 'addBucket' && (() => {
+        const liveAccount = accounts.find(a => a.id === modal.accountId)
+        if (!liveAccount) return null
+        return (
+          <AddBucketModal
+            account={liveAccount}
+            wants={wants.filter(w => !w.bucketId)}
+            onClose={() => setModal(null)}
+            onSave={async (data, wantId) => {
+              const ref = await addBucket(data)
+              if (ref && wantId) await updateWant(wantId, { bucketId: ref.id })
+              setModal(null)
+            }}
+          />
+        )
+      })()}
     </div>
   )
 }
