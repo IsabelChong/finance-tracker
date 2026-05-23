@@ -1,5 +1,6 @@
 import { useState } from 'react'
-import { Plus, X, RefreshCw, TrendingUp, TrendingDown, ChevronDown, ChevronRight } from 'lucide-react'
+import { Plus, X, RefreshCw, TrendingUp, TrendingDown, ChevronDown, ChevronRight, ArrowDownToLine } from 'lucide-react'
+import { Account } from '../types'
 import DatePicker from '../components/DatePicker'
 import { useInvestments } from '../hooks/useInvestments'
 import { useAccounts } from '../hooks/useAccounts'
@@ -187,7 +188,33 @@ export default function InvestmentsPage() {
           onSave={async (prices) => { await updatePricesByTicker(prices); setShowUpdatePrices(false) }}
         />
       )}
-      {selected && <EditInvestmentModal investment={selected} onClose={() => setSelected(null)} onUpdate={updateInvestment} onDelete={async (id) => { await deleteInvestment(id); setSelected(null) }} />}
+      {selected && (
+        <EditInvestmentModal
+          investment={selected}
+          accounts={accounts.filter(a => a.type !== 'credit')}
+          onClose={() => setSelected(null)}
+          onUpdate={updateInvestment}
+          onDelete={async (id, saleData) => {
+            if (saleData) {
+              const acc = accounts.find(a => a.id === saleData.accountId)
+              await addTransaction({
+                date: saleData.date,
+                amount: saleData.amount,
+                type: 'income',
+                categoryName: 'Investment Returns',
+                categoryIcon: '📈',
+                categoryColor: '#22C55E',
+                accountId: saleData.accountId,
+                accountName: acc?.name ?? '',
+                payee: selected.ticker,
+                notes: `Sale of ${selected.shares} ${selected.ticker} shares`,
+              })
+            }
+            await deleteInvestment(id)
+            setSelected(null)
+          }}
+        />
+      )}
       {showFund && <FundModal accounts={accounts.filter(a => a.type !== 'credit')} onClose={() => setShowFund(false)} onSave={async (accountId, accountName, amount) => {
         await addTransaction({ date: new Date(), amount, type: 'expense', categoryName: 'Investments', categoryIcon: '📈', categoryColor: '#22C55E', accountId, accountName, payee: 'Investment Funding', notes: '' })
         setShowFund(false)
@@ -290,10 +317,31 @@ function AddInvestmentModal({ onClose, onSave }: { onClose: () => void; onSave: 
   )
 }
 
-function EditInvestmentModal({ investment, onClose, onDelete }: { investment: Investment; onClose: () => void; onUpdate: (id: string, d: any) => void; onDelete: (id: string) => void }) {
-  const cost = investment.shares * investment.purchasePrice
+function EditInvestmentModal({ investment, accounts, onClose, onUpdate, onDelete }: {
+  investment: Investment
+  accounts: Account[]
+  onClose: () => void
+  onUpdate: (id: string, d: any) => void
+  onDelete: (id: string, saleData?: { amount: number; accountId: string; date: Date }) => void
+}) {
+  const cost  = investment.shares * investment.purchasePrice
   const value = investment.shares * investment.currentPrice
-  const gl = value - cost
+  const gl    = value - cost
+
+  const [confirmDelete, setConfirmDelete] = useState(false)
+  const [withSale, setWithSale]           = useState(true)
+  const [saleAmount, setSaleAmount]       = useState(value.toFixed(2))
+  const [saleAccountId, setSaleAccountId] = useState(accounts[0]?.id ?? '')
+  const [saleDate, setSaleDate]           = useState(new Date().toISOString().split('T')[0])
+  const [deleting, setDeleting]           = useState(false)
+
+  const handleDelete = async () => {
+    setDeleting(true)
+    const saleData = withSale && saleAccountId
+      ? { amount: Number(saleAmount), accountId: saleAccountId, date: new Date(saleDate) }
+      : undefined
+    await onDelete(investment.id, saleData)
+  }
 
   return (
     <div className="fixed inset-0 bg-black/70 z-50 flex items-end lg:items-center justify-center" onClick={onClose}>
@@ -303,25 +351,97 @@ function EditInvestmentModal({ investment, onClose, onDelete }: { investment: In
           <button onClick={onClose} className="text-slate-400 hover:text-white"><X size={20} /></button>
         </div>
         <div className="p-5 space-y-4">
-          <div className="bg-slate-800 rounded-xl p-4 space-y-2 text-sm">
-            <div className="flex justify-between"><span className="text-slate-400">Shares</span><span>{investment.shares}</span></div>
-            <div className="flex justify-between"><span className="text-slate-400">Avg cost</span><span>{formatCurrency(investment.purchasePrice)}</span></div>
-            <div className="flex justify-between"><span className="text-slate-400">Current price</span><span className="font-semibold">{formatCurrency(investment.currentPrice)}</span></div>
-            <div className="flex justify-between"><span className="text-slate-400">Broker</span><span>{investment.broker || '—'}</span></div>
-            <div className="flex justify-between"><span className="text-slate-400">Bought</span><span>{formatDate(investment.purchaseDate, { day: 'numeric', month: 'short', year: 'numeric' })}</span></div>
-            <div className="flex justify-between border-t border-slate-700 pt-2">
-              <span className="text-slate-400">P/L</span>
-              <span className={`font-bold ${gl >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                {gl >= 0 ? '+' : ''}{formatCurrency(gl)} ({formatPercent(cost > 0 ? (gl / cost) * 100 : 0)})
-              </span>
-            </div>
-          </div>
-          {investment.notes && <p className="text-sm text-slate-400 italic">"{investment.notes}"</p>}
-          <p className="text-xs text-slate-500 text-center">To update the current price, use "Update Prices" on the main page.</p>
-          <button onClick={() => { if (confirm(`Delete this ${investment.ticker} lot?`)) onDelete(investment.id) }}
-            className="w-full text-red-400 text-sm py-2 hover:bg-red-400/10 rounded-xl transition-colors">
-            Delete holding
-          </button>
+          {!confirmDelete ? (
+            <>
+              <div className="bg-slate-800 rounded-xl p-4 space-y-2 text-sm">
+                <div className="flex justify-between"><span className="text-slate-400">Shares</span><span>{investment.shares}</span></div>
+                <div className="flex justify-between"><span className="text-slate-400">Avg cost</span><span>{formatCurrency(investment.purchasePrice)}</span></div>
+                <div className="flex justify-between"><span className="text-slate-400">Current price</span><span className="font-semibold">{formatCurrency(investment.currentPrice)}</span></div>
+                <div className="flex justify-between"><span className="text-slate-400">Broker</span><span>{investment.broker || '—'}</span></div>
+                <div className="flex justify-between"><span className="text-slate-400">Bought</span><span>{formatDate(investment.purchaseDate, { day: 'numeric', month: 'short', year: 'numeric' })}</span></div>
+                <div className="flex justify-between border-t border-slate-700 pt-2">
+                  <span className="text-slate-400">P/L</span>
+                  <span className={`font-bold ${gl >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                    {gl >= 0 ? '+' : ''}{formatCurrency(gl)} ({formatPercent(cost > 0 ? (gl / cost) * 100 : 0)})
+                  </span>
+                </div>
+              </div>
+              {investment.notes && <p className="text-sm text-slate-400 italic">"{investment.notes}"</p>}
+              <p className="text-xs text-slate-500 text-center">To update the current price, use "Update Prices" on the main page.</p>
+              <button onClick={() => setConfirmDelete(true)}
+                className="w-full text-red-400 text-sm py-2 hover:bg-red-400/10 rounded-xl transition-colors">
+                Delete holding
+              </button>
+            </>
+          ) : (
+            <>
+              <div className="bg-slate-800 rounded-xl p-4">
+                <p className="font-semibold text-sm mb-1">Delete {investment.ticker} lot</p>
+                <p className="text-xs text-slate-400">{investment.shares} shares · current value {formatCurrency(value)}</p>
+              </div>
+
+              {/* Option toggle */}
+              <div className="space-y-2">
+                <button onClick={() => setWithSale(false)}
+                  className={`w-full flex items-center gap-3 p-3.5 rounded-xl border transition-all text-left ${!withSale ? 'border-slate-500 bg-slate-800' : 'border-slate-700 hover:border-slate-600'}`}>
+                  <div className={`w-4 h-4 rounded-full border-2 flex items-center justify-center shrink-0 ${!withSale ? 'border-blue-500' : 'border-slate-600'}`}>
+                    {!withSale && <div className="w-2 h-2 rounded-full bg-blue-500" />}
+                  </div>
+                  <div>
+                    <p className="text-sm font-medium">Just remove from tracker</p>
+                    <p className="text-xs text-slate-500">No transaction recorded</p>
+                  </div>
+                </button>
+
+                <button onClick={() => setWithSale(true)}
+                  className={`w-full flex items-center gap-3 p-3.5 rounded-xl border transition-all text-left ${withSale ? 'border-slate-500 bg-slate-800' : 'border-slate-700 hover:border-slate-600'}`}>
+                  <div className={`w-4 h-4 rounded-full border-2 flex items-center justify-center shrink-0 ${withSale ? 'border-blue-500' : 'border-slate-600'}`}>
+                    {withSale && <div className="w-2 h-2 rounded-full bg-blue-500" />}
+                  </div>
+                  <div>
+                    <p className="text-sm font-medium">Transfer sale proceeds to account</p>
+                    <p className="text-xs text-slate-500">Records an income transaction</p>
+                  </div>
+                </button>
+              </div>
+
+              {/* Sale details */}
+              {withSale && (
+                <div className="space-y-3 bg-slate-800/50 rounded-2xl p-3">
+                  <div>
+                    <label className="text-xs text-slate-400 font-medium block mb-1.5">Amount received (SGD)</label>
+                    <input
+                      type="number" value={saleAmount}
+                      onChange={e => setSaleAmount(e.target.value)}
+                      onKeyDown={e => ['e','E','+','-'].includes(e.key) && e.preventDefault()}
+                      className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2.5 text-sm text-white outline-none focus:border-blue-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs text-slate-400 font-medium block mb-1.5">Transfer into account</label>
+                    <select value={saleAccountId} onChange={e => setSaleAccountId(e.target.value)}
+                      className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2.5 text-sm text-white outline-none focus:border-blue-500">
+                      {accounts.map(a => <option key={a.id} value={a.id}>{a.name} ({formatCurrency(a.balance)})</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-xs text-slate-400 font-medium block mb-1.5">Sale date</label>
+                    <DatePicker value={saleDate} onChange={setSaleDate} />
+                  </div>
+                </div>
+              )}
+
+              <div className="flex gap-2 pt-1">
+                <button onClick={() => setConfirmDelete(false)} className="flex-1 py-3 rounded-xl text-sm font-semibold text-slate-400 hover:text-white bg-slate-800 hover:bg-slate-700 transition-colors">
+                  Cancel
+                </button>
+                <button onClick={handleDelete} disabled={deleting || (withSale && (!saleAmount || Number(saleAmount) <= 0 || !saleAccountId))}
+                  className="flex-1 py-3 rounded-xl text-sm font-semibold bg-red-600 hover:bg-red-700 disabled:opacity-40 text-white transition-colors flex items-center justify-center gap-2">
+                  {deleting ? 'Processing…' : withSale ? <><ArrowDownToLine size={14} /> Delete & Transfer</> : 'Confirm Delete'}
+                </button>
+              </div>
+            </>
+          )}
         </div>
       </div>
     </div>
