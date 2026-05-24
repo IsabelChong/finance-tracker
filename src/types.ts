@@ -108,6 +108,24 @@ export interface HousingGoal {
   createdAt: Timestamp
 }
 
+export interface RecurringTransaction {
+  id: string
+  payee: string
+  amount: number
+  type: 'income' | 'expense'
+  frequency: 'weekly' | 'monthly'
+  dayOfWeek?: number   // 0=Sun … 6=Sat
+  dayOfMonth?: number  // 1–31
+  categoryName: string
+  categoryIcon: string
+  categoryColor: string
+  accountId: string
+  accountName: string
+  notes: string
+  lastLoggedAt?: Timestamp
+  createdAt: Timestamp
+}
+
 export const DEFAULT_EXPENSE_CATEGORIES: Omit<Category, 'id'>[] = [
   { name: 'Drinks',             icon: '🥤', colorHex: '#0EA5E9', type: 'expense', sortOrder: 0,  isDefault: true },
   { name: 'Beauty and Skincare',icon: '✨', colorHex: '#F472B6', type: 'expense', sortOrder: 1,  isDefault: true },
